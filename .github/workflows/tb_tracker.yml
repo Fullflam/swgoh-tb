@@ -26,5 +26,5 @@ jobs:
       - run: python tb_tracker.py
         env:
           ALLY_CODE: ${{ secrets.ALLY_CODE }}
-          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_TEST }}
           COMLINK_URL: ${{ secrets.COMLINK_URL }}
