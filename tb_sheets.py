@@ -4,7 +4,7 @@ import json
 import re
 import gspread
 from google.oauth2.service_account import Credentials
-from datetime import datetime
+from datetime import datetime, timedelta
 from collections import defaultdict
 import io
 from googleapiclient.discovery import build
@@ -68,18 +68,28 @@ def get_guild_data():
 
 def lire_jsons_drive():
     service = get_drive_service()
-    date_aujd = datetime.now().strftime("%Y-%m-%d")
-    results = service.files().list(
-        q=f"'{DRIVE_FOLDER_ID}' in parents and mimeType='application/json' and name contains '{date_aujd}'",
-        fields="files(id, name)",
-        orderBy="name"
-    ).execute()
-    fichiers = results.get("files", [])
-    if not fichiers:
-        print(f"Aucun fichier trouvé pour {date_aujd}")
+    # Cherche les fichiers les plus récents — 7 derniers jours
+    dates = [(datetime.now() - timedelta(days=i)).strftime("%Y-%m-%d") for i in range(7)]
+    
+    tous_fichiers = []
+    for date in dates:
+        results = service.files().list(
+            q=f"'{DRIVE_FOLDER_ID}' in parents and mimeType='application/json' and name contains '{date}'",
+            fields="files(id, name)",
+            orderBy="name"
+        ).execute()
+        fichiers = results.get("files", [])
+        if fichiers:
+            tous_fichiers = fichiers
+            print(f"Fichiers trouvés pour {date}")
+            break
+
+    if not tous_fichiers:
+        print("Aucun fichier trouvé dans les 7 derniers jours")
         return []
+
     ops = []
-    for fichier in fichiers:
+    for fichier in tous_fichiers:
         request = service.files().get_media(fileId=fichier["id"])
         fh = io.BytesIO()
         downloader = MediaIoBaseDownload(fh, request)
@@ -94,7 +104,6 @@ def lire_jsons_drive():
     return ops
 
 def analyser_ops(ops, membres, ally_to_pid):
-    # Par phase : playerId -> liste d'unités assignées
     assignations = defaultdict(lambda: defaultdict(list))
     for op in ops:
         filename = op.get("_filename", "")
@@ -115,26 +124,34 @@ def update_sheet(membres, assignations):
     for phase in sorted(assignations.keys()):
         nom_onglet = f"Phase {phase}"
 
-        # Crée ou récupère l'onglet
         try:
             ws = wb.worksheet(nom_onglet)
-            ws.clear()
+            # Vérifie si déjà rempli
+            valeur_a2 = ws.acell("A2").value
+            if valeur_a2:
+                print(f"Onglet '{nom_onglet}' déjà rempli, on skip.")
+                continue
         except gspread.exceptions.WorksheetNotFound:
             ws = wb.add_worksheet(title=nom_onglet, rows=100, cols=50)
 
         # Entêtes
-        entetes = ["Pseudo", "PlayerId", "Erreurs totales", "Unités assignées"]
-        ws.update("A1", [entetes], value_input_option="RAW")
+        entetes = ["Pseudo", "PlayerId", "Erreurs totales"]
+        # Trouve le max d'unités assignées pour dimensionner les colonnes
+        max_unites = max((len(u) for u in assignations[phase].values()), default=0)
+        for i in range(1, max_unites + 1):
+            entetes.append(f"Unité {i}")
+
+        ws.update([entetes], "A1", value_input_option="RAW")
 
         # Données
         lignes = []
         for pid, infos in sorted(membres.items(), key=lambda x: x[1]["nom"].lower()):
             unites = assignations[phase].get(pid, [])
-            unites_str = ", ".join(unites) if unites else "Aucune assignation"
-            # TODO: colonne erreurs totales — à remplir quand TB active
-            lignes.append([infos["nom"], pid, "TODO", unites_str])
+            # TODO: erreurs totales — à remplir quand TB active
+            ligne = [infos["nom"], pid, "TODO"] + unites + [""] * (max_unites - len(unites))
+            lignes.append(ligne)
 
-        ws.update("A2", lignes, value_input_option="RAW")
+        ws.update(lignes, "A2", value_input_option="RAW")
 
         # Cache la colonne B (PlayerId)
         wb.batch_update({
@@ -152,7 +169,7 @@ def update_sheet(membres, assignations):
             }]
         })
 
-        print(f"Onglet '{nom_onglet}' mis à jour !")
+        print(f"Onglet '{nom_onglet}' rempli !")
 
 if __name__ == "__main__":
     print(f"=== TB Sheets {datetime.now().strftime('%d/%m/%Y %H:%M')} ===")
@@ -162,4 +179,4 @@ if __name__ == "__main__":
         assignations = analyser_ops(ops, membres, ally_to_pid)
         update_sheet(membres, assignations)
     else:
-        print("Aucun fichier WookieeBot trouvé pour aujourd'hui.")
+        print("Aucun fichier WookieeBot trouvé.")
