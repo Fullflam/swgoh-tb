@@ -27,12 +27,18 @@ def get_drive_service():
 
 def lire_jsons_drive():
     service = get_drive_service()
+    date_aujd = datetime.now().strftime("%Y-%m-%d")
+    
     results = service.files().list(
-        q=f"'{DRIVE_FOLDER_ID}' in parents and mimeType='application/json'",
+        q=f"'{DRIVE_FOLDER_ID}' in parents and mimeType='application/json' and name contains '{date_aujd}'",
         fields="files(id, name)",
         orderBy="name"
     ).execute()
     fichiers = results.get("files", [])
+    
+    if not fichiers:
+        print(f"Aucun fichier trouvé pour la date {date_aujd}")
+        return []
     
     ops = []
     for fichier in fichiers:
