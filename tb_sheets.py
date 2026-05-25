@@ -1,33 +1,29 @@
 import requests
 import os
-import json
 import re
-import gspread
+import json
 import base64
-from google.oauth2.service_account import Credentials
-from datetime import datetime, timedelta
-from collections import defaultdict
 import io
+import gspread
+from collections import defaultdict
+from datetime import datetime, timedelta
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseDownload
+from google.oauth2.service_account import Credentials
 
 COMLINK_URL = os.environ.get("COMLINK_URL", "https://swgoh-comlink-latest-13vg.onrender.com")
 ALLY_CODE = os.environ.get("ALLY_CODE", "")
 GOOGLE_CREDENTIALS = os.environ.get("GOOGLE_CREDENTIALS", "")
-SHEET_ID = "1A7eqze-H4bqjgfTg4JrDNlEqNu57LBdTjl77mlo_Vbs"
-DRIVE_FOLDER_ID = "1d8uIyrLSLl4F9Ro3mXf8DrAPezDZF0A0"
 GH_TOKEN = os.environ.get("GH_TOKEN", "")
 GH_REPO_TRACKER = "Fullflam/swgoh-tracker"
-
+DRIVE_FOLDER_ID = "1d8uIyrLSLl4F9Ro3mXf8DrAPezDZF0A0"
+SHEET_ID = "1A7eqze-H4bqjgfTg4JrDNlEqNu57LBdTjl77mlo_Vbs"
 
 def get_gspread_client():
     creds_dict = json.loads(GOOGLE_CREDENTIALS)
     creds = Credentials.from_service_account_info(
         creds_dict,
-        scopes=[
-            "https://spreadsheets.google.com/feeds",
-            "https://www.googleapis.com/auth/drive"
-        ]
+        scopes=["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
     )
     return gspread.authorize(creds)
 
@@ -50,21 +46,10 @@ def comlink_post(endpoint, payload):
 
 def get_ally_to_pid():
     url = f"https://api.github.com/repos/{GH_REPO_TRACKER}/contents/ally_to_pid.json"
-
-    res = requests.get(
-        url,
-        headers={
-            "Authorization": f"Bearer {GH_TOKEN}",
-            "Accept": "application/vnd.github+json"
-        },
-        timeout=30
-    )
-
+    res = requests.get(url, headers={"Authorization": f"token {GH_TOKEN}"})
     if res.status_code != 200:
-        print(f"Impossible de lire ally_to_pid.json - status {res.status_code}")
-        print(res.text[:500])
+        print("Impossible de lire ally_to_pid.json")
         return {}
-
     contenu = base64.b64decode(res.json()["content"]).decode("utf-8")
     return json.loads(contenu)
 
@@ -73,17 +58,15 @@ def get_guild_data():
     id_guilde = joueur.get("guildId")
     brut = comlink_post("/guild", {"guildId": id_guilde, "includeRecentGuildActivityInfo": True})
     guilde = brut.get("guild", brut)
-    membres = {m.get("playerId"): {"nom": m.get("playerName"), "allyCode": ""} for m in guilde.get("member", [])}
+    membres = {m.get("playerId"): m.get("playerName") for m in guilde.get("member", [])}
+    tb = guilde.get("recentTerritoryBattleResult", [])
     ally_to_pid = get_ally_to_pid()
-    return membres, ally_to_pid
+    return membres, ally_to_pid, tb[0] if tb else None
 
 def lire_jsons_drive():
     service = get_drive_service()
-    # Cherche les fichiers les plus récents — 7 derniers jours
-    dates = [(datetime.now() - timedelta(days=i)).strftime("%Y-%m-%d") for i in range(7)]
-    
-    tous_fichiers = []
-    for date in dates:
+    for i in range(14):
+        date = (datetime.now() - timedelta(days=i)).strftime("%Y-%m-%d")
         results = service.files().list(
             q=f"'{DRIVE_FOLDER_ID}' in parents and mimeType='application/json' and name contains '{date}'",
             fields="files(id, name)",
@@ -91,53 +74,70 @@ def lire_jsons_drive():
         ).execute()
         fichiers = results.get("files", [])
         if fichiers:
-            tous_fichiers = fichiers
             print(f"Fichiers trouvés pour {date}")
-            break
+            ops = []
+            for fichier in fichiers:
+                request = service.files().get_media(fileId=fichier["id"])
+                fh = io.BytesIO()
+                downloader = MediaIoBaseDownload(fh, request)
+                done = False
+                while not done:
+                    _, done = downloader.next_chunk()
+                fh.seek(0)
+                data = json.load(fh)
+                data["_filename"] = fichier["name"]
+                ops.append(data)
+                print(f"Lu : {fichier['name']}")
+            return ops
+    print("Aucun fichier trouvé dans les 14 derniers jours")
+    return []
 
-    if not tous_fichiers:
-        print("Aucun fichier trouvé dans les 7 derniers jours")
-        return []
-
-    ops = []
-    for fichier in tous_fichiers:
-        request = service.files().get_media(fileId=fichier["id"])
-        fh = io.BytesIO()
-        downloader = MediaIoBaseDownload(fh, request)
-        done = False
-        while not done:
-            _, done = downloader.next_chunk()
-        fh.seek(0)
-        data = json.load(fh)
-        data["_filename"] = fichier["name"]
-        ops.append(data)
-        print(f"Lu : {fichier['name']}")
-    return ops
-
-def analyser_ops(ops, membres, ally_to_pid):
-    assignations = defaultdict(lambda: defaultdict(list))
+def analyser_assignations(ops, ally_to_pid):
+    assignations = defaultdict(lambda: defaultdict(lambda: defaultdict(int)))
+    zones_par_phase = defaultdict(set)
     for op in ops:
         filename = op.get("_filename", "")
         phase_match = re.search(r'P(\d+)', filename)
         phase = int(phase_match.group(1)) if phase_match else 0
         for a in op.get("platoonAssignments", []):
             ally_code = str(a.get("allyCode", ""))
-            unit = a.get("unitBaseId", "")
             pid = ally_to_pid.get(ally_code)
+            zone_id = a.get("zoneId", "")
+            conflict_match = re.search(r'conflict(\d+)', zone_id)
+            zone = int(conflict_match.group(1)) if conflict_match else 0
             if pid:
-                assignations[phase][pid].append(unit)
-    return assignations
+                assignations[phase][pid][zone] += 1
+                zones_par_phase[phase].add(zone)
+    return assignations, zones_par_phase
 
-def update_sheet(membres, assignations):
+def analyser_deploiements(tb):
+    deploiements = defaultdict(lambda: defaultdict(lambda: defaultdict(int)))
+    for stat in tb.get("finalStat", []):
+        map_id = stat.get("mapStatId", "")
+        if "unit_donated" not in map_id:
+            continue
+        phase_match = re.search(r'phase(\d+)', map_id)
+        conflict_match = re.search(r'conflict(\d+)', map_id)
+        if not phase_match or not conflict_match:
+            continue
+        phase = int(phase_match.group(1))
+        zone = int(conflict_match.group(1))
+        for ps in stat.get("playerStat", []):
+            pid = ps.get("memberId")
+            score = int(ps.get("score", 0))
+            deploiements[phase][pid][zone] += score
+    return deploiements
+
+def update_sheet(membres, assignations, zones_par_phase, deploiements):
     client = get_gspread_client()
     wb = client.open_by_key(SHEET_ID)
 
     for phase in sorted(assignations.keys()):
         nom_onglet = f"Phase {phase}"
+        zones = sorted(zones_par_phase[phase])
 
         try:
             ws = wb.worksheet(nom_onglet)
-            # Vérifie si déjà rempli
             valeur_a2 = ws.acell("A2").value
             if valeur_a2:
                 print(f"Onglet '{nom_onglet}' déjà rempli, on skip.")
@@ -146,25 +146,26 @@ def update_sheet(membres, assignations):
             ws = wb.add_worksheet(title=nom_onglet, rows=100, cols=50)
 
         # Entêtes
-        entetes = ["Pseudo", "PlayerId", "Erreurs totales"]
-        # Trouve le max d'unités assignées pour dimensionner les colonnes
-        max_unites = max((len(u) for u in assignations[phase].values()), default=0)
-        for i in range(1, max_unites + 1):
-            entetes.append(f"Unité {i}")
-
+        entetes = ["Pseudo", "PlayerId", "Total assigné", "Total déployé"]
+        for zone in zones:
+            entetes.append(f"Zone {zone} assigné")
+            entetes.append(f"Zone {zone} déployé")
         ws.update([entetes], "A1", value_input_option="RAW")
 
         # Données
         lignes = []
-        for pid, infos in sorted(membres.items(), key=lambda x: x[1]["nom"].lower()):
-            unites = assignations[phase].get(pid, [])
-            # AFAIRE: erreurs totales — à remplir quand TB active
-            ligne = [infos["nom"], pid, "AFAIRE"] + unites + [""] * (max_unites - len(unites))
+        for pid, nom in sorted(membres.items(), key=lambda x: x[1].lower()):
+            total_assigne = sum(assignations[phase][pid].values())
+            total_deploye = sum(deploiements[phase][pid].values())
+            ligne = [nom, pid, total_assigne, total_deploye]
+            for zone in zones:
+                ligne.append(assignations[phase][pid].get(zone, 0))
+                ligne.append(deploiements[phase][pid].get(zone, 0))
             lignes.append(ligne)
 
         ws.update(lignes, "A2", value_input_option="RAW")
 
-        # Cache la colonne B (PlayerId)
+        # Cache PlayerId
         wb.batch_update({
             "requests": [{
                 "updateDimensionProperties": {
@@ -184,10 +185,14 @@ def update_sheet(membres, assignations):
 
 if __name__ == "__main__":
     print(f"=== TB Sheets {datetime.now().strftime('%d/%m/%Y %H:%M')} ===")
-    membres, ally_to_pid = get_guild_data()
-    ops = lire_jsons_drive()
-    if ops:
-        assignations = analyser_ops(ops, membres, ally_to_pid)
-        update_sheet(membres, assignations)
+    membres, ally_to_pid, tb = get_guild_data()
+    if not tb:
+        print("Aucune TB récente trouvée.")
     else:
-        print("Aucun fichier WookieeBot trouvé.")
+        ops = lire_jsons_drive()
+        if ops:
+            assignations, zones_par_phase = analyser_assignations(ops, ally_to_pid)
+            deploiements = analyser_deploiements(tb)
+            update_sheet(membres, assignations, zones_par_phase, deploiements)
+        else:
+            print("Aucun fichier WookieeBot trouvé.")
