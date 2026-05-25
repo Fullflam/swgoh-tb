@@ -15,6 +15,9 @@ ALLY_CODE = os.environ.get("ALLY_CODE", "")
 GOOGLE_CREDENTIALS = os.environ.get("GOOGLE_CREDENTIALS", "")
 SHEET_ID = "1A7eqze-H4bqjgfTg4JrDNlEqNu57LBdTjl77mlo_Vbs"
 DRIVE_FOLDER_ID = "1d8uIyrLSLl4F9Ro3mXf8DrAPezDZF0A0"
+GH_TOKEN = os.environ.get("GH_TOKEN", "")
+GH_REPO_TRACKER = "Fullflam/swgoh-tracker"
+
 
 def get_gspread_client():
     creds_dict = json.loads(GOOGLE_CREDENTIALS)
@@ -44,26 +47,22 @@ def comlink_post(endpoint, payload):
     res.raise_for_status()
     return res.json()
 
+def get_ally_to_pid():
+    url = f"https://api.github.com/repos/{GH_REPO_TRACKER}/contents/ally_to_pid.json"
+    res = requests.get(url, headers={"Authorization": f"token {GH_TOKEN}"})
+    if res.status_code != 200:
+        print("Impossible de lire ally_to_pid.json")
+        return {}
+    contenu = base64.b64decode(res.json()["content"]).decode("utf-8")
+    return json.loads(contenu)
+
 def get_guild_data():
     joueur = comlink_post("/player", {"allyCode": ALLY_CODE})
     id_guilde = joueur.get("guildId")
     brut = comlink_post("/guild", {"guildId": id_guilde, "includeRecentGuildActivityInfo": True})
     guilde = brut.get("guild", brut)
-    membres = {}
-    ally_to_pid = {}
-    for m in guilde.get("member", []):
-        pid = m.get("playerId")
-        nom = m.get("playerName")
-        try:
-            profil = comlink_post("/player", {"playerId": pid})
-            ally_code = str(profil.get("allyCode", ""))
-        except Exception as e:
-            print(f"Erreur pour {nom}: {e}")
-            ally_code = ""
-        membres[pid] = {"nom": nom, "allyCode": ally_code}
-        if ally_code:
-            ally_to_pid[ally_code] = pid
-        print(f"Récupéré : {nom} → {ally_code}")
+    membres = {m.get("playerId"): {"nom": m.get("playerName"), "allyCode": ""} for m in guilde.get("member", [])}
+    ally_to_pid = get_ally_to_pid()
     return membres, ally_to_pid
 
 def lire_jsons_drive():
