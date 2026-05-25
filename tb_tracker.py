@@ -105,7 +105,7 @@ def analyser_ops(ops, membres, ally_to_pid):
 
 def envoie_discord(membres, ally_to_pid, assignations):
     aujd = datetime.now().strftime("%d/%m/%Y")
-    lignes = [f"# Assignations WookieeBot — {aujd}"]
+    lignes = [f"# test - Assignations WookieeBot — {aujd}"]
     lignes.append(f"> {sum(len(v) for p in assignations.values() for v in p.values())} assignations au total\n")
 
     for phase in sorted(assignations.keys()):
