@@ -50,10 +50,21 @@ def comlink_post(endpoint, payload):
 
 def get_ally_to_pid():
     url = f"https://api.github.com/repos/{GH_REPO_TRACKER}/contents/ally_to_pid.json"
-    res = requests.get(url, headers={"Authorization": f"token {GH_TOKEN}"})
+
+    res = requests.get(
+        url,
+        headers={
+            "Authorization": f"Bearer {GH_TOKEN}",
+            "Accept": "application/vnd.github+json"
+        },
+        timeout=30
+    )
+
     if res.status_code != 200:
-        print("Impossible de lire ally_to_pid.json")
+        print(f"Impossible de lire ally_to_pid.json - status {res.status_code}")
+        print(res.text[:500])
         return {}
+
     contenu = base64.b64decode(res.json()["content"]).decode("utf-8")
     return json.loads(contenu)
 
