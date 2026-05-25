@@ -2,6 +2,7 @@ import requests
 import os
 import json
 import re
+import base64
 from collections import defaultdict
 from datetime import datetime
 from google.oauth2.service_account import Credentials
