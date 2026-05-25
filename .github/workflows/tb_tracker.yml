@@ -22,7 +22,7 @@ jobs:
             echo "Tentative $i... c'est long et c'est chiant et ca marche pas"
             sleep 15
           done
-      - run: pip install requests
+      - run: pip install -r requirements.txt
       - run: python tb_tracker.py
         env:
           ALLY_CODE: ${{ secrets.ALLY_CODE }}
