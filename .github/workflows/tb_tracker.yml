@@ -23,13 +23,6 @@ jobs:
             sleep 15
           done
       - run: pip install -r requirements.txt
-      - run: python tb_tracker.py
-        env:
-          ALLY_CODE: ${{ secrets.ALLY_CODE }}
-          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_TEST }}
-          COMLINK_URL: ${{ secrets.COMLINK_URL }}
-          GOOGLE_CREDENTIALS: ${{ secrets.GOOGLE_CREDENTIALS }}
-          GH_TOKEN: ${{ secrets.GH_TOKEN }}
       - run: python tb_sheets.py
         env:
           ALLY_CODE: ${{ secrets.ALLY_CODE }}
