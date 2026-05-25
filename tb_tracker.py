@@ -16,6 +16,7 @@ GOOGLE_CREDENTIALS = os.environ.get("GOOGLE_CREDENTIALS", "")
 DRIVE_FOLDER_ID = "1d8uIyrLSLl4F9Ro3mXf8DrAPezDZF0A0"
 GOOGLE_CREDENTIALS = os.environ.get("GOOGLE_CREDENTIALS", "")
 print("GOOGLE_CREDENTIALS length:", len(GOOGLE_CREDENTIALS))
+
 def get_drive_service():
     creds_dict = json.loads(GOOGLE_CREDENTIALS)
     creds = Credentials.from_service_account_info(
@@ -75,6 +76,7 @@ def get_guild_data():
             profil = comlink_post("/player", {"playerId": pid})
             ally_code = str(profil.get("allyCode", ""))
         except:
+            print(f"Erreur pour {nom}: {e}")
             ally_code = ""
         
         membres[pid] = {"nom": nom, "allyCode": ally_code}
