@@ -1,12 +1,52 @@
 import requests
 import os
+import json
 import re
 from collections import defaultdict
 from datetime import datetime
+from google.oauth2.service_account import Credentials
+from googleapiclient.discovery import build
+from googleapiclient.http import MediaIoBaseDownload
+import io
 
 COMLINK_URL = os.environ.get("COMLINK_URL", "https://swgoh-comlink-latest-13vg.onrender.com")
 ALLY_CODE = os.environ.get("ALLY_CODE", "")
 DISCORD_WEBHOOK = os.environ.get("DISCORD_WEBHOOK", "")
+GOOGLE_CREDENTIALS = os.environ.get("GOOGLE_CREDENTIALS", "")
+DRIVE_FOLDER_ID = "1d8uIyrLSLl4F9Ro3mXf8DrAPezDZF0A0"
+
+def get_drive_service():
+    creds_dict = json.loads(GOOGLE_CREDENTIALS)
+    creds = Credentials.from_service_account_info(
+        creds_dict,
+        scopes=["https://www.googleapis.com/auth/drive.readonly"]
+    )
+    return build("drive", "v3", credentials=creds)
+
+def lire_jsons_drive():
+    service = get_drive_service()
+    results = service.files().list(
+        q=f"'{DRIVE_FOLDER_ID}' in parents and mimeType='application/json'",
+        fields="files(id, name)",
+        orderBy="name"
+    ).execute()
+    fichiers = results.get("files", [])
+    
+    ops = []
+    for fichier in fichiers:
+        request = service.files().get_media(fileId=fichier["id"])
+        fh = io.BytesIO()
+        downloader = MediaIoBaseDownload(fh, request)
+        done = False
+        while not done:
+            _, done = downloader.next_chunk()
+        fh.seek(0)
+        data = json.load(fh)
+        data["_filename"] = fichier["name"]
+        ops.append(data)
+        print(f"Lu : {fichier['name']}")
+    
+    return ops
 
 def comlink_post(endpoint, payload):
     res = requests.post(
@@ -16,89 +56,79 @@ def comlink_post(endpoint, payload):
     )
     res.raise_for_status()
     return res.json()
-
-def get_tb_data():
+def get_guild_data():
     joueur = comlink_post("/player", {"allyCode": ALLY_CODE})
     id_guilde = joueur.get("guildId")
     brut = comlink_post("/guild", {"guildId": id_guilde, "includeRecentGuildActivityInfo": True})
     guilde = brut.get("guild", brut)
-    membres = {m.get("playerId"): m.get("playerName") for m in guilde.get("member", [])}
-    tb = guilde.get("recentTerritoryBattleResult", [])
-    if not tb:
-        print("Aucune TB récente trouvée.")
-        return None, None
-    return membres, tb[0]
+    
+    membres = {}
+    ally_to_pid = {}
+    
+    for m in guilde.get("member", []):
+        pid = m.get("playerId")
+        nom = m.get("playerName")
+        
+        # Récupère l'allyCode via /player
+        try:
+            profil = comlink_post("/player", {"playerId": pid})
+            ally_code = str(profil.get("allyCode", ""))
+        except:
+            ally_code = ""
+        
+        membres[pid] = {"nom": nom, "allyCode": ally_code}
+        if ally_code:
+            ally_to_pid[ally_code] = pid
+        
+        print(f"Récupéré : {nom} → {ally_code}")
+    
+    return membres, ally_to_pid
 
-def analyser_tb(membres, tb):
-    total_par_joueur = defaultdict(int)
-    par_phase = defaultdict(lambda: defaultdict(int))
+def analyser_ops(ops, membres, ally_to_pid):
+    
+    assignations = defaultdict(lambda: defaultdict(list))
+    
+    for op in ops:
+        filename = op.get("_filename", "")
+        phase_match = re.search(r'P(\d+)', filename)
+        phase = int(phase_match.group(1)) if phase_match else 0
+        
+        for a in op.get("platoonAssignments", []):
+            ally_code = str(a.get("allyCode", ""))
+            unit = a.get("unitBaseId", "")
+            assignations[phase][ally_code].append(unit)
+    
+    return assignations
 
-    for stat in tb.get("finalStat", []):
-        map_id = stat.get("mapStatId", "")
-        if "unit_donated" not in map_id:
-            continue
-
-        phase_match = re.search(r'phase(\d+)', map_id)
-        conflict_match = re.search(r'conflict(\d+)', map_id)
-
-        for ps in stat.get("playerStat", []):
-            member_id = ps.get("memberId")
-            score = int(ps.get("score", 0))
-            nom = membres.get(member_id, "INCONNU")
-
-            if map_id == "unit_donated":
-                total_par_joueur[nom] = score
-            elif phase_match and not conflict_match:
-                phase = int(phase_match.group(1))
-                par_phase[phase][nom] = score
-
-    return total_par_joueur, par_phase
-
-def envoie_discord(guild_name, tb, membres, total_par_joueur, par_phase):
-    definition_id = tb.get("definitionId", "TB inconnue")
-    total_etoiles = tb.get("totalStars", 0)
+def envoie_discord(membres, ally_to_pid, assignations):
     aujd = datetime.now().strftime("%d/%m/%Y")
+    lignes = [f"# Assignations WookieeBot — {aujd}"]
+    lignes.append(f"> {sum(len(v) for p in assignations.values() for v in p.values())} assignations au total\n")
 
-    tous_noms = set(membres.values())
-    ayant_deploye = set(total_par_joueur.keys())
-    absents = sorted(tous_noms - ayant_deploye - {"INCONNU"})
-
-    lignes = [f"# Rapport TB — {definition_id} — {aujd}"]
-    lignes.append(f"> Étoiles : **{total_etoiles}** · Phases jouées : **{len(par_phase)}**\n")
-
-    # Classement global
-    lignes.append(f"**Classement global ({len(ayant_deploye)} participants)**")
-    for nom, total in sorted(total_par_joueur.items(), key=lambda x: x[1], reverse=True):
-        lignes.append(f"• {nom} — {total} unités")
-
-    # Absents
-    if absents:
-        lignes.append(f"\n**N'ont pas déployé ({len(absents)})**")
-        for nom in absents:
-            lignes.append(f"• {nom}")
-
-    # Par phase
-    for phase in sorted(par_phase.keys()):
-        lignes.append(f"\n**Phase {phase}**")
-        for nom, score in sorted(par_phase[phase].items(), key=lambda x: x[1], reverse=True):
-            lignes.append(f"• {nom} — {score} unités")
+    for phase in sorted(assignations.keys()):
+        lignes.append(f"**Phase {phase}**")
+        for ally_code, unites in sorted(assignations[phase].items()):
+            pid = ally_to_pid.get(ally_code)
+            nom = membres[pid]["nom"] if pid else f"AllyCode {ally_code}"
+            unites_str = ", ".join(unites)
+            lignes.append(f"• {nom} → {unites_str}")
+        lignes.append("")
 
     message = "\n".join(lignes)
-
-    # Discord limite à 2000 caractères
     if len(message) > 1900:
         chunks = [message[i:i+1900] for i in range(0, len(message), 1900)]
         for chunk in chunks:
             requests.post(DISCORD_WEBHOOK, json={"content": chunk})
     else:
         requests.post(DISCORD_WEBHOOK, json={"content": message})
-
-    print("Rapport TB envoyé !")
+    print("Message envoyé !")
 
 if __name__ == "__main__":
     print(f"=== TB Tracker {datetime.now().strftime('%d/%m/%Y %H:%M')} ===")
-    membres, tb = get_tb_data()
-    if tb:
-        guild_name = "Guilde"
-        total_par_joueur, par_phase = analyser_tb(membres, tb)
-        envoie_discord(guild_name, tb, membres, total_par_joueur, par_phase)
+    ops = lire_jsons_drive()
+    if not ops:
+        print("Aucun fichier trouvé dans Drive !")
+    else:
+        membres, ally_to_pid = get_guild_data()
+        assignations = analyser_ops(ops, membres, ally_to_pid)
+        envoie_discord(membres, ally_to_pid, assignations)
