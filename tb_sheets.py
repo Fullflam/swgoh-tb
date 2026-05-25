@@ -164,6 +164,43 @@ def update_sheet(membres, assignations, zones_par_phase, deploiements):
             lignes.append(ligne)
 
         ws.update(lignes, "A2", value_input_option="RAW")
+        # Colorier les pseudos
+        format_requests = []
+        for i, (pid, nom) in enumerate(sorted(membres.items(), key=lambda x: x[1].lower())):
+            row = i + 2
+            total_assigne = sum(assignations[phase][pid].values())
+            total_deploye = sum(deploiements[phase][pid].values())
+
+            if total_assigne > 0 and total_deploye < total_assigne:
+                # Rouge — n'a pas tout déployé
+                couleur = {"red": 0.89, "green": 0.27, "blue": 0.27}
+            elif total_assigne > 0:
+                # Vert — a tout déployé
+                couleur = {"red": 0.30, "green": 0.69, "blue": 0.51}
+            else:
+                # Gris — pas assigné
+                couleur = {"red": 0.9, "green": 0.9, "blue": 0.9}
+
+            format_requests.append({
+                "repeatCell": {
+                    "range": {
+                        "sheetId": ws.id,
+                        "startRowIndex": row - 1,
+                        "endRowIndex": row,
+                        "startColumnIndex": 0,
+                        "endColumnIndex": 1
+                    },
+                    "cell": {
+                        "userEnteredFormat": {
+                            "backgroundColor": couleur
+                        }
+                    },
+                    "fields": "userEnteredFormat.backgroundColor"
+                }
+            })
+
+        if format_requests:
+            wb.batch_update({"requests": format_requests})
 
         # Cache PlayerId
         wb.batch_update({
