@@ -29,3 +29,8 @@ jobs:
           DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_TEMPO }}
           COMLINK_URL: ${{ secrets.COMLINK_URL }}
           GOOGLE_CREDENTIALS: ${{ secrets.GOOGLE_CREDENTIALS }}
+      - run: python tb_sheets.py
+        env:
+          ALLY_CODE: ${{ secrets.ALLY_CODE }}
+          COMLINK_URL: ${{ secrets.COMLINK_URL }}
+          GOOGLE_CREDENTIALS: ${{ secrets.GOOGLE_CREDENTIALS }}
