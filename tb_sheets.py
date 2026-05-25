@@ -3,6 +3,7 @@ import os
 import json
 import re
 import gspread
+import base64
 from google.oauth2.service_account import Credentials
 from datetime import datetime, timedelta
 from collections import defaultdict
