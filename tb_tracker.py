@@ -14,7 +14,8 @@ ALLY_CODE = os.environ.get("ALLY_CODE", "")
 DISCORD_WEBHOOK = os.environ.get("DISCORD_WEBHOOK", "")
 GOOGLE_CREDENTIALS = os.environ.get("GOOGLE_CREDENTIALS", "")
 DRIVE_FOLDER_ID = "1d8uIyrLSLl4F9Ro3mXf8DrAPezDZF0A0"
-
+GOOGLE_CREDENTIALS = os.environ.get("GOOGLE_CREDENTIALS", "")
+print("GOOGLE_CREDENTIALS length:", len(GOOGLE_CREDENTIALS))
 def get_drive_service():
     creds_dict = json.loads(GOOGLE_CREDENTIALS)
     creds = Credentials.from_service_account_info(
