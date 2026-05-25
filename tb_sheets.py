@@ -158,8 +158,8 @@ def update_sheet(membres, assignations):
         lignes = []
         for pid, infos in sorted(membres.items(), key=lambda x: x[1]["nom"].lower()):
             unites = assignations[phase].get(pid, [])
-            # TODO: erreurs totales — à remplir quand TB active
-            ligne = [infos["nom"], pid, "TODO"] + unites + [""] * (max_unites - len(unites))
+            # AFAIRE: erreurs totales — à remplir quand TB active
+            ligne = [infos["nom"], pid, "AFAIRE"] + unites + [""] * (max_unites - len(unites))
             lignes.append(ligne)
 
         ws.update(lignes, "A2", value_input_option="RAW")
