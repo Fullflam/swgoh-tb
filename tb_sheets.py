@@ -171,15 +171,15 @@ def update_sheet(membres, assignations, zones_par_phase, deploiements):
             total_assigne = sum(assignations[phase][pid].values())
             total_deploye = sum(deploiements[phase][pid].values())
 
-            if total_assigne > 0 and total_deploye < total_assigne:
-                # Rouge — n'a pas tout déployé
-                couleur = {"red": 0.89, "green": 0.27, "blue": 0.27}
-            elif total_assigne > 0:
-                # Vert — a tout déployé
-                couleur = {"red": 0.30, "green": 0.69, "blue": 0.51}
-            else:
+            if total_assigne == 0:
                 # Gris — pas assigné
                 couleur = {"red": 0.9, "green": 0.9, "blue": 0.9}
+            elif total_deploye > total_assigne:
+                # Rouge — a déployé trop
+                couleur = {"red": 0.89, "green": 0.27, "blue": 0.27}
+            else:
+                # Blanc — normal
+                couleur = {"red": 1, "green": 1, "blue": 1}
 
             format_requests.append({
                 "repeatCell": {
