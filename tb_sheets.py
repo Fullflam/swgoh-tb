@@ -146,10 +146,10 @@ def update_sheet(membres, assignations, zones_par_phase, deploiements):
             ws = wb.add_worksheet(title=nom_onglet, rows=100, cols=50)
 
         # Entêtes
-        entetes = ["Pseudo", "PlayerId", "Total assigné", "Total déployé"]
+        entetes = ["Pseudo", "PlayerId", "Total déployé", "Total assigné"]
         for zone in zones:
-            entetes.append(f"Zone {zone} assigné")
             entetes.append(f"Zone {zone} déployé")
+            entetes.append(f"Zone {zone} assigné")
         ws.update([entetes], "A1", value_input_option="RAW")
 
         # Données
@@ -157,13 +157,14 @@ def update_sheet(membres, assignations, zones_par_phase, deploiements):
         for pid, nom in sorted(membres.items(), key=lambda x: x[1].lower()):
             total_assigne = sum(assignations[phase][pid].values())
             total_deploye = sum(deploiements[phase][pid].values())
-            ligne = [nom, pid, total_assigne, total_deploye]
+            ligne = [nom, pid, total_deploye, total_assigne]
             for zone in zones:
-                ligne.append(assignations[phase][pid].get(zone, 0))
                 ligne.append(deploiements[phase][pid].get(zone, 0))
+                ligne.append(assignations[phase][pid].get(zone, 0))
             lignes.append(ligne)
 
         ws.update(lignes, "A2", value_input_option="RAW")
+
         # Colorier les pseudos
         format_requests = []
         for i, (pid, nom) in enumerate(sorted(membres.items(), key=lambda x: x[1].lower())):
@@ -172,13 +173,10 @@ def update_sheet(membres, assignations, zones_par_phase, deploiements):
             total_deploye = sum(deploiements[phase][pid].values())
 
             if total_assigne == 0:
-                # Gris — pas assigné
-                couleur = {"red": 0.9, "green": 0.9, "blue": 0.9}
+                couleur = {"red": 1, "green": 1, "blue": 1}
             elif total_deploye > total_assigne:
-                # Rouge — a déployé trop
                 couleur = {"red": 0.89, "green": 0.27, "blue": 0.27}
             else:
-                # Blanc — normal
                 couleur = {"red": 1, "green": 1, "blue": 1}
 
             format_requests.append({
