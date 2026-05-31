@@ -146,7 +146,7 @@ def update_sheet(membres, assignations, zones_par_phase, deploiements):
             ws = wb.add_worksheet(title=nom_onglet, rows=100, cols=50)
 
         # Entêtes
-        entetes = ["Pseudo", "PlayerId", "Total déployé", "Total assigné"]
+        entetes = ["Pseudo", "PlayerId", "Total déployé", "Total assigné", ""]
         for zone in zones:
             entetes.append(f"Zone {zone} déployé")
             entetes.append(f"Zone {zone} assigné")
@@ -157,7 +157,7 @@ def update_sheet(membres, assignations, zones_par_phase, deploiements):
         for pid, nom in sorted(membres.items(), key=lambda x: x[1].lower()):
             total_assigne = sum(assignations[phase][pid].values())
             total_deploye = sum(deploiements[phase][pid].values())
-            ligne = [nom, pid, total_deploye, total_assigne]
+            ligne = [nom, pid, total_deploye, total_assigne, ""]
             for zone in zones:
                 ligne.append(deploiements[phase][pid].get(zone, 0))
                 ligne.append(assignations[phase][pid].get(zone, 0))
@@ -172,9 +172,7 @@ def update_sheet(membres, assignations, zones_par_phase, deploiements):
             total_assigne = sum(assignations[phase][pid].values())
             total_deploye = sum(deploiements[phase][pid].values())
 
-            if total_assigne == 0:
-                couleur = {"red": 1, "green": 1, "blue": 1}
-            elif total_deploye > total_assigne:
+            if total_deploye > total_assigne:
                 couleur = {"red": 0.89, "green": 0.27, "blue": 0.27}
             else:
                 couleur = {"red": 1, "green": 1, "blue": 1}
