@@ -129,6 +129,8 @@ def analyser_deploiements(tb):
         if not phase_match or not conflict_match:
             continue
         phase = int(phase_match.group(1))
+        if phase == 4:
+            print(f"playerStat pour phase 4: {stat.get('playerStat', [])[:2]}")
         zone = int(conflict_match.group(1))
         for ps in stat.get("playerStat", []):
             pid = ps.get("memberId")
