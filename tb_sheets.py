@@ -248,7 +248,10 @@ def update_sheet(membres, assignations, zones_par_phase, deploiements, gp_combat
         print(f"Onglet '{nom_onglet}' rempli !")
 
 if __name__ == "__main__":
+    print("GP combat phase 4:", dict(gp_combat[4]))
+    print("Nombre entrées:", len(gp_combat[4]))
     print(f"=== TB Sheets {datetime.now().strftime('%d/%m/%Y %H:%M')} ===")
+    '''
     membres, ally_to_pid, tb = get_guild_data()
     if not tb:
         print("Aucune TB récente trouvée.")
@@ -261,3 +264,4 @@ if __name__ == "__main__":
             update_sheet(membres, assignations, zones_par_phase, deploiements, gp_combat)
         else:
             print("Aucun fichier WookieeBot trouvé.")
+    '''
