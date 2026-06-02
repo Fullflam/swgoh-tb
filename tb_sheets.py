@@ -36,6 +36,21 @@ def get_drive_service():
     return build("drive", "v3", credentials=creds)
 
 def comlink_post(endpoint, payload):
+    for tentative in range(3):
+        try:
+            res = requests.post(
+                f"{COMLINK_URL}{endpoint}",
+                json={"payload": payload, "enums": False},
+                timeout=60
+            )
+            res.raise_for_status()
+            return res.json()
+        except Exception as e:
+            print(f"Tentative {tentative + 1} échouée : {e}")
+            if tentative < 2:
+                import time
+                time.sleep(10)
+    raise Exception(f"Échec après 3 tentatives sur {endpoint}")
     res = requests.post(
         f"{COMLINK_URL}{endpoint}",
         json={"payload": payload, "enums": False},
