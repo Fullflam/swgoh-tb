@@ -51,13 +51,6 @@ def comlink_post(endpoint, payload):
                 import time
                 time.sleep(10)
     raise Exception(f"Échec après 3 tentatives sur {endpoint}")
-    res = requests.post(
-        f"{COMLINK_URL}{endpoint}",
-        json={"payload": payload, "enums": False},
-        timeout=60
-    )
-    res.raise_for_status()
-    return res.json()
 
 def get_ally_to_pid():
     url = f"https://api.github.com/repos/{GH_REPO_TRACKER}/contents/ally_to_pid.json"
