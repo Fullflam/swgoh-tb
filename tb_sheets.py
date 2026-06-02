@@ -137,10 +137,12 @@ def analyser_deploiements(tb):
     return deploiements
 
 def analyser_gp_combat(tb):
-    # GP total par joueur par phase (somme de toutes les zones)
     gp_combat = defaultdict(lambda: defaultdict(int))
+    map_ids_trouves = set()
     for stat in tb.get("finalStat", []):
         map_id = stat.get("mapStatId", "")
+        if "power" in map_id:
+            map_ids_trouves.add(map_id)
         if "power_zone" not in map_id:
             continue
         phase_match = re.search(r'phase(\d+)', map_id)
@@ -151,6 +153,7 @@ def analyser_gp_combat(tb):
             pid = ps.get("memberId")
             score = int(ps.get("score", 0))
             gp_combat[phase][pid] += score
+    print("MapIds power trouvés:", map_ids_trouves)
     return gp_combat
 
 def format_gp(gp):
