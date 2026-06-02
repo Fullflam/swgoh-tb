@@ -149,6 +149,7 @@ def analyser_gp_combat(tb):
         if not phase_match:
             continue
         phase = int(phase_match.group(1))
+        print(f"Phase trouvée: {phase} pour {map_id}")
         for ps in stat.get("playerStat", []):
             pid = ps.get("memberId")
             score = int(ps.get("score", 0))
