@@ -129,8 +129,6 @@ def analyser_deploiements(tb):
         if not phase_match or not conflict_match:
             continue
         phase = int(phase_match.group(1))
-        if phase == 4:
-            print(f"playerStat pour phase 4: {stat.get('playerStat', [])[:2]}")
         zone = int(conflict_match.group(1))
         for ps in stat.get("playerStat", []):
             pid = ps.get("memberId")
@@ -138,33 +136,7 @@ def analyser_deploiements(tb):
             deploiements[phase][pid][zone] += score
     return deploiements
 
-def analyser_gp_combat(tb):
-    gp_combat = defaultdict(lambda: defaultdict(int))
-    map_ids_trouves = set()
-    for stat in tb.get("finalStat", []):
-        map_id = stat.get("mapStatId", "")
-        if "power" in map_id:
-            map_ids_trouves.add(map_id)
-        if "power_zone" not in map_id:
-            continue
-        phase_match = re.search(r'phase(\d+)', map_id)
-        if not phase_match:
-            continue
-        phase = int(phase_match.group(1))
-        print(f"Phase trouvée: {phase} pour {map_id}")
-        for ps in stat.get("playerStat", []):
-            pid = ps.get("memberId")
-            score = int(ps.get("score", 0))
-            gp_combat[phase][pid] += score
-    print("MapIds power trouvés:", map_ids_trouves)
-    return gp_combat
-
-def format_gp(gp):
-    if gp == 0:
-        return 0
-    return round(gp / 1_000_000, 1)
-
-def update_sheet(membres, assignations, zones_par_phase, deploiements, gp_combat):
+def update_sheet(membres, assignations, zones_par_phase, deploiements):
     client = get_gspread_client()
     wb = client.open_by_key(SHEET_ID)
 
@@ -181,8 +153,8 @@ def update_sheet(membres, assignations, zones_par_phase, deploiements, gp_combat
         except gspread.exceptions.WorksheetNotFound:
             ws = wb.add_worksheet(title=nom_onglet, rows=100, cols=50)
 
-        # Entêtes — GP combat juste après Pseudo
-        entetes = ["Pseudo", "GP combat (M)", "PlayerId", "Total déployé", "Total assigné", ""]
+        # Entêtes
+        entetes = ["Pseudo", "PlayerId", "Total déployé", "Total assigné", ""]
         for zone in zones:
             entetes.append(f"Zone {zone} déployé")
             entetes.append(f"Zone {zone} assigné")
@@ -193,8 +165,7 @@ def update_sheet(membres, assignations, zones_par_phase, deploiements, gp_combat
         for pid, nom in sorted(membres.items(), key=lambda x: x[1].lower()):
             total_assigne = sum(assignations[phase][pid].values())
             total_deploye = sum(deploiements[phase][pid].values())
-            gp = format_gp(gp_combat[phase].get(pid, 0))
-            ligne = [nom, gp, pid, total_deploye, total_assigne, ""]
+            ligne = [nom, pid, total_deploye, total_assigne, ""]
             for zone in zones:
                 ligne.append(deploiements[phase][pid].get(zone, 0))
                 ligne.append(assignations[phase][pid].get(zone, 0))
@@ -235,15 +206,15 @@ def update_sheet(membres, assignations, zones_par_phase, deploiements, gp_combat
         if format_requests:
             wb.batch_update({"requests": format_requests})
 
-        # Cache PlayerId (maintenant colonne C = index 2)
+        # Cache PlayerId
         wb.batch_update({
             "requests": [{
                 "updateDimensionProperties": {
                     "range": {
                         "sheetId": ws.id,
                         "dimension": "COLUMNS",
-                        "startIndex": 2,
-                        "endIndex": 3
+                        "startIndex": 1,
+                        "endIndex": 2
                     },
                     "properties": {"hiddenByUser": True},
                     "fields": "hiddenByUser"
@@ -252,6 +223,7 @@ def update_sheet(membres, assignations, zones_par_phase, deploiements, gp_combat
         })
 
         print(f"Onglet '{nom_onglet}' rempli !")
+
 if __name__ == "__main__":
     print(f"=== TB Sheets {datetime.now().strftime('%d/%m/%Y %H:%M')} ===")
     membres, ally_to_pid, tb = get_guild_data()
@@ -262,10 +234,6 @@ if __name__ == "__main__":
         if ops:
             assignations, zones_par_phase = analyser_assignations(ops, ally_to_pid)
             deploiements = analyser_deploiements(tb)
-            gp_combat = analyser_gp_combat(tb)
-            print("GP combat phase 4:", dict(gp_combat[4]))
-            print("Nombre entrées:", len(gp_combat[4]))
-            update_sheet(membres, assignations, zones_par_phase, deploiements, gp_combat)
+            update_sheet(membres, assignations, zones_par_phase, deploiements)
         else:
             print("Aucun fichier WookieeBot trouvé.")
-    
