@@ -39,7 +39,7 @@ def comlink_post(endpoint, payload):
     res = requests.post(
         f"{COMLINK_URL}{endpoint}",
         json={"payload": payload, "enums": False},
-        timeout=30
+        timeout=60
     )
     res.raise_for_status()
     return res.json()
@@ -128,7 +128,29 @@ def analyser_deploiements(tb):
             deploiements[phase][pid][zone] += score
     return deploiements
 
-def update_sheet(membres, assignations, zones_par_phase, deploiements):
+def analyser_gp_combat(tb):
+    # GP total par joueur par phase (somme de toutes les zones)
+    gp_combat = defaultdict(lambda: defaultdict(int))
+    for stat in tb.get("finalStat", []):
+        map_id = stat.get("mapStatId", "")
+        if "power_zone" not in map_id:
+            continue
+        phase_match = re.search(r'phase(\d+)', map_id)
+        if not phase_match:
+            continue
+        phase = int(phase_match.group(1))
+        for ps in stat.get("playerStat", []):
+            pid = ps.get("memberId")
+            score = int(ps.get("score", 0))
+            gp_combat[phase][pid] += score
+    return gp_combat
+
+def format_gp(gp):
+    if gp == 0:
+        return 0
+    return round(gp / 1_000_000, 1)
+
+def update_sheet(membres, assignations, zones_par_phase, deploiements, gp_combat):
     client = get_gspread_client()
     wb = client.open_by_key(SHEET_ID)
 
@@ -145,8 +167,8 @@ def update_sheet(membres, assignations, zones_par_phase, deploiements):
         except gspread.exceptions.WorksheetNotFound:
             ws = wb.add_worksheet(title=nom_onglet, rows=100, cols=50)
 
-        # Entêtes
-        entetes = ["Pseudo", "PlayerId", "Total déployé", "Total assigné", ""]
+        # Entêtes — GP combat juste après Pseudo
+        entetes = ["Pseudo", "GP combat (M)", "PlayerId", "Total déployé", "Total assigné", ""]
         for zone in zones:
             entetes.append(f"Zone {zone} déployé")
             entetes.append(f"Zone {zone} assigné")
@@ -157,7 +179,8 @@ def update_sheet(membres, assignations, zones_par_phase, deploiements):
         for pid, nom in sorted(membres.items(), key=lambda x: x[1].lower()):
             total_assigne = sum(assignations[phase][pid].values())
             total_deploye = sum(deploiements[phase][pid].values())
-            ligne = [nom, pid, total_deploye, total_assigne, ""]
+            gp = format_gp(gp_combat[phase].get(pid, 0))
+            ligne = [nom, gp, pid, total_deploye, total_assigne, ""]
             for zone in zones:
                 ligne.append(deploiements[phase][pid].get(zone, 0))
                 ligne.append(assignations[phase][pid].get(zone, 0))
@@ -198,15 +221,15 @@ def update_sheet(membres, assignations, zones_par_phase, deploiements):
         if format_requests:
             wb.batch_update({"requests": format_requests})
 
-        # Cache PlayerId
+        # Cache PlayerId (maintenant colonne C = index 2)
         wb.batch_update({
             "requests": [{
                 "updateDimensionProperties": {
                     "range": {
                         "sheetId": ws.id,
                         "dimension": "COLUMNS",
-                        "startIndex": 1,
-                        "endIndex": 2
+                        "startIndex": 2,
+                        "endIndex": 3
                     },
                     "properties": {"hiddenByUser": True},
                     "fields": "hiddenByUser"
@@ -226,6 +249,7 @@ if __name__ == "__main__":
         if ops:
             assignations, zones_par_phase = analyser_assignations(ops, ally_to_pid)
             deploiements = analyser_deploiements(tb)
-            update_sheet(membres, assignations, zones_par_phase, deploiements)
+            gp_combat = analyser_gp_combat(tb)
+            update_sheet(membres, assignations, zones_par_phase, deploiements, gp_combat)
         else:
             print("Aucun fichier WookieeBot trouvé.")
