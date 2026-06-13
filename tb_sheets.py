@@ -53,13 +53,15 @@ def comlink_post(endpoint, payload):
     raise Exception(f"Échec après 3 tentatives sur {endpoint}")
 
 def get_ally_to_pid():
-    url = f"https://api.github.com/repos/{GH_REPO_TRACKER}/contents/ally_to_pid.json"
+    url = f"https://api.github.com/repos/{GH_REPO_TRACKER}/contents/ally_to_pid.py"
     res = requests.get(url, headers={"Authorization": f"token {GH_TOKEN}"})
     if res.status_code != 200:
-        print("Impossible de lire ally_to_pid.json")
+        print("Impossible de lire ally_to_pid.py")
         return {}
     contenu = base64.b64decode(res.json()["content"]).decode("utf-8")
-    return json.loads(contenu)
+    local_vars = {}
+    exec(contenu, local_vars)
+    return local_vars.get("ALLY_TO_PID", {})
 
 def get_guild_data():
     joueur = comlink_post("/player", {"allyCode": ALLY_CODE})
