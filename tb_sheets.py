@@ -19,6 +19,25 @@ GH_REPO_TRACKER = "Fullflam/swgoh-tracker"
 DRIVE_FOLDER_ID = "1d8uIyrLSLl4F9Ro3mXf8DrAPezDZF0A0"
 SHEET_ID = "1A7eqze-H4bqjgfTg4JrDNlEqNu57LBdTjl77mlo_Vbs"
 
+def debug_tb_phases(tb):
+    print("\n=== DEBUG UNIT_DONATED MAP IDS ===")
+
+    phases = set()
+
+    for stat in tb.get("finalStat", []):
+        map_id = stat.get("mapStatId", "")
+
+        if "unit_donated" not in map_id:
+            continue
+
+        print(map_id)
+
+        phase_match = re.search(r"phase(\d+)", map_id)
+        if phase_match:
+            phases.add(int(phase_match.group(1)))
+
+    print("\nPhases trouvées :", sorted(phases))
+    
 def get_gspread_client():
     creds_dict = json.loads(GOOGLE_CREDENTIALS)
     creds = Credentials.from_service_account_info(
@@ -229,10 +248,14 @@ def update_sheet(membres, assignations, zones_par_phase, deploiements):
 if __name__ == "__main__":
     print(f"=== TB Sheets {datetime.now().strftime('%d/%m/%Y %H:%M')} ===")
     membres, ally_to_pid, tb = get_guild_data()
+
     if not tb:
         print("Aucune TB récente trouvée.")
     else:
+        debug_tb_phases(tb)
+
         ops = lire_jsons_drive()
+
         if ops:
             assignations, zones_par_phase = analyser_assignations(ops, ally_to_pid)
             deploiements = analyser_deploiements(tb)
