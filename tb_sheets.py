@@ -157,22 +157,25 @@ def analyser_deploiements(tb):
             deploiements[phase][pid][zone] += score
     return deploiements
 
-def update_sheet(membres, assignations, zones_par_phase, deploiements):
-    client = get_gspread_client()
-    wb = client.open_by_key(SHEET_ID)
+def clear_sheet(ws):
+    """Efface tout le contenu de l'onglet et remet les colonnes en visible."""
+    ws.clear()
+    # Remettre la colonne B (PlayerId) visible avant de re-cacher après écriture
+    print(f"Onglet '{ws.title}' nettoyé.")
 
+def update_sheet(membres, assignations, zones_par_phase, deploiements, wb):
     for phase in sorted(assignations.keys()):
         nom_onglet = f"Phase {phase}"
         zones = sorted(zones_par_phase[phase])
 
+        # Récupère ou crée l'onglet
         try:
             ws = wb.worksheet(nom_onglet)
-            valeur_a2 = ws.acell("A2").value
-            if valeur_a2:
-                print(f"Onglet '{nom_onglet}' déjà rempli, on skip.")
-                continue
         except gspread.exceptions.WorksheetNotFound:
             ws = wb.add_worksheet(title=nom_onglet, rows=100, cols=50)
+
+        # Nettoie l'onglet avant d'écrire
+        clear_sheet(ws)
 
         # Entêtes
         entetes = ["Pseudo", "PlayerId", "Total déployé", "Total assigné", ""]
@@ -259,6 +262,8 @@ if __name__ == "__main__":
         if ops:
             assignations, zones_par_phase = analyser_assignations(ops, ally_to_pid)
             deploiements = analyser_deploiements(tb)
-            update_sheet(membres, assignations, zones_par_phase, deploiements)
+            client = get_gspread_client()
+            wb = client.open_by_key(SHEET_ID)
+            update_sheet(membres, assignations, zones_par_phase, deploiements, wb)
         else:
             print("Aucun fichier WookieeBot trouvé.")
