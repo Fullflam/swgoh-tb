@@ -13,32 +13,12 @@ from google.oauth2.service_account import Credentials
 
 COMLINK_URL = os.environ.get("COMLINK_URL", "https://swgoh-comlink-latest-13vg.onrender.com")
 ALLY_CODE = os.environ.get("ALLY_CODE", "")
-#ALLY_CODE = "492133242"
 GOOGLE_CREDENTIALS = os.environ.get("GOOGLE_CREDENTIALS", "")
 GH_TOKEN = os.environ.get("GH_TOKEN", "")
 GH_REPO_TRACKER = "Fullflam/swgoh-tracker"
 DRIVE_FOLDER_ID = "1d8uIyrLSLl4F9Ro3mXf8DrAPezDZF0A0"
 SHEET_ID = "1A7eqze-H4bqjgfTg4JrDNlEqNu57LBdTjl77mlo_Vbs"
 
-def debug_tb_phases(tb):
-    print("\n=== DEBUG UNIT_DONATED MAP IDS ===")
-
-    phases = set()
-
-    for stat in tb.get("finalStat", []):
-        map_id = stat.get("mapStatId", "")
-
-        if "unit_donated" not in map_id:
-            continue
-
-        print(map_id)
-
-        phase_match = re.search(r"phase(\d+)", map_id)
-        if phase_match:
-            phases.add(int(phase_match.group(1)))
-
-    print("\nPhases trouvées :", sorted(phases))
-    
 def get_gspread_client():
     creds_dict = json.loads(GOOGLE_CREDENTIALS)
     creds = Credentials.from_service_account_info(
@@ -150,7 +130,6 @@ def analyser_deploiements(tb):
         conflict_match = re.search(r'conflict(\d+)', map_id)
         if not phase_match or not conflict_match:
             continue
-        print(f"{map_id} → {len(stat.get('playerStat', []))} playerStats")
         phase = int(phase_match.group(1))
         zone = int(conflict_match.group(1))
         for ps in stat.get("playerStat", []):
@@ -206,7 +185,7 @@ def update_sheet(membres, assignations, zones_par_phase, deploiements, wb):
             total_assigne = sum(assignations[phase][pid].values())
             total_deploye = sum(deploiements[phase][pid].values())
 
-            if total_deploye > total_assigne:
+            if total_deploye < total_assigne:
                 couleur = {"red": 0.89, "green": 0.27, "blue": 0.27}
             else:
                 couleur = {"red": 1, "green": 1, "blue": 1}
@@ -257,8 +236,6 @@ if __name__ == "__main__":
     if not tb:
         print("Aucune TB récente trouvée.")
     else:
-        debug_tb_phases(tb)
-
         ops = lire_jsons_drive()
 
         if ops:
