@@ -13,8 +13,8 @@ from google.oauth2.service_account import Credentials
 
 COMLINK_URL = os.environ.get("COMLINK_URL", "https://swgoh-comlink-latest-13vg.onrender.com")
 #ALLY_CODE = os.environ.get("ALLY_CODE", "")
-#ALLY_CODE="666716133" #top 1
-ALLY_CODE="882232376" #mudhorn
+ALLY_CODE="666716133" #top 1
+#ALLY_CODE="882232376" #mudhorn
 GOOGLE_CREDENTIALS = os.environ.get("GOOGLE_CREDENTIALS", "")
 GH_TOKEN = os.environ.get("GH_TOKEN", "")
 GH_REPO_TRACKER = "Fullflam/swgoh-tracker"
