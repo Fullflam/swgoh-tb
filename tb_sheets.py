@@ -13,7 +13,6 @@ from google.oauth2.service_account import Credentials
 
 COMLINK_URL = os.environ.get("COMLINK_URL", "https://swgoh-comlink-latest-13vg.onrender.com")
 ALLY_CODE = os.environ.get("ALLY_CODE", "")
-#ALLY_CODE = "492133242"
 GOOGLE_CREDENTIALS = os.environ.get("GOOGLE_CREDENTIALS", "")
 GH_TOKEN = os.environ.get("GH_TOKEN", "")
 GH_REPO_TRACKER = "Fullflam/swgoh-tracker"
@@ -239,11 +238,38 @@ if __name__ == "__main__":
     else:
         ops = lire_jsons_drive()
 
+        client = get_gspread_client()
+        wb = client.open_by_key(SHEET_ID)
+
         if ops:
             assignations, zones_par_phase = analyser_assignations(ops, ally_to_pid)
             deploiements = analyser_deploiements(tb)
-            client = get_gspread_client()
-            wb = client.open_by_key(SHEET_ID)
             update_sheet(membres, assignations, zones_par_phase, deploiements, wb)
         else:
-            print("Aucun fichier WookieeBot trouvé.")
+            print("Aucun fichier WookieeBot trouvé, mode déploiements seuls.")
+            deploiements = analyser_deploiements(tb)
+            try:
+                ws = wb.worksheet("Total déployé")
+            except gspread.exceptions.WorksheetNotFound:
+                ws = wb.add_worksheet(title="Total déployé", rows=100, cols=20)
+            ws.clear()
+            phases = sorted(set(
+                int(re.search(r'phase(\d+)', stat.get("mapStatId", "")).group(1))
+                for stat in tb.get("finalStat", [])
+                if "unit_donated" in stat.get("mapStatId", "") and re.search(r'phase(\d+)', stat.get("mapStatId", ""))
+            ))
+            entetes = ["Pseudo", "PlayerId"] + [f"Phase {p}" for p in phases] + ["Total"]
+            ws.update([entetes], "A1", value_input_option="RAW")
+            lignes = []
+            for pid, nom in sorted(membres.items(), key=lambda x: x[1].lower()):
+                ligne = [nom, pid]
+                total = 0
+                for phase in phases:
+                    n = sum(deploiements[phase][pid].values())
+                    ligne.append(n)
+                    total += n
+                ligne.append(total)
+                lignes.append(ligne)
+            ws.update(lignes, "A2", value_input_option="RAW")
+            wb.batch_update({"requests": [{"updateDimensionProperties": {"range": {"sheetId": ws.id, "dimension": "COLUMNS", "startIndex": 1, "endIndex": 2}, "properties": {"hiddenByUser": True}, "fields": "hiddenByUser"}}]})
+            print("Onglet 'Total déployé' rempli !")
