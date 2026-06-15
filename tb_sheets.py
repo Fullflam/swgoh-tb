@@ -149,6 +149,7 @@ def analyser_deploiements(tb):
         conflict_match = re.search(r'conflict(\d+)', map_id)
         if not phase_match or not conflict_match:
             continue
+        print(f"{map_id} → {len(stat.get('playerStat', []))} playerStats")
         phase = int(phase_match.group(1))
         zone = int(conflict_match.group(1))
         for ps in stat.get("playerStat", []):
