@@ -142,7 +142,9 @@ def update_sheet(membres, assignations, zones_par_phase, deploiements):
     client = get_gspread_client()
     wb = client.open_by_key(SHEET_ID)
 
-    nom_onglet = f"TB {datetime.now().strftime('%d/%m/%y')}"
+    end_time = int(tb.get("endTime", 0))
+    date_tb = datetime.fromtimestamp(end_time).strftime('%d/%m/%y') if end_time else datetime.now().strftime('%d/%m/%y')
+    nom_onglet = f"TB {date_tb}"
 
     # Vérifie si l'onglet existe déjà
     try:
