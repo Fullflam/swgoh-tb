@@ -153,6 +153,7 @@ def update_sheet(membres, assignations, zones_par_phase, deploiements):
         return
     except gspread.exceptions.WorksheetNotFound:
         ws = wb.add_worksheet(title=nom_onglet, rows=500, cols=50)
+        total_stars = tb.get("totalStars", 0)
         print(f"Onglet '{nom_onglet}' créé.")
 
     toutes_lignes = []
