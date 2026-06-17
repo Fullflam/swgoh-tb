@@ -17,7 +17,7 @@ GOOGLE_CREDENTIALS = os.environ.get("GOOGLE_CREDENTIALS", "")
 GH_TOKEN = os.environ.get("GH_TOKEN", "")
 GH_REPO_TRACKER = "Fullflam/swgoh-tracker"
 DRIVE_FOLDER_ID = "1d8uIyrLSLl4F9Ro3mXf8DrAPezDZF0A0"
-SHEET_ID = "1ascT5K_knXHzLi5qhCjX0B24-DSopFPMZ6n_jKnGiGY"
+SHEET_ID = "1A7eqze-H4bqjgfTg4JrDNlEqNu57LBdTjl77mlo_Vbs"
 
 def get_gspread_client():
     creds_dict = json.loads(GOOGLE_CREDENTIALS)
@@ -138,44 +138,35 @@ def analyser_deploiements(tb):
             deploiements[phase][pid][zone] += score
     return deploiements
 
-def update_sheet(membres, assignations, zones_par_phase, deploiements):
-    client = get_gspread_client()
-    wb = client.open_by_key(SHEET_ID)
+def clear_sheet(ws):
+    """Efface tout le contenu de l'onglet et remet les colonnes en visible."""
+    ws.clear()
+    # Remettre la colonne B (PlayerId) visible avant de re-cacher après écriture
+    print(f"Onglet '{ws.title}' nettoyé.")
 
-    end_time = int(tb.get("endTime", 0))
-    date_tb = datetime.fromtimestamp(end_time / 1000).strftime('%d/%m/%y') if end_time else datetime.now().strftime('%d/%m/%y')
-    nom_onglet = f"TB {date_tb}"
-
-    # Vérifie si l'onglet existe déjà
-    try:
-        ws = wb.worksheet(nom_onglet)
-        print(f"Onglet '{nom_onglet}' déjà existant, skip.")
-        return
-    except gspread.exceptions.WorksheetNotFound:
-        ws = wb.add_worksheet(title=nom_onglet, rows=500, cols=50)
-        total_stars = tb.get("totalStars", 0)
-        print(f"Onglet '{nom_onglet}' créé.")
-
-    toutes_lignes = []
-    format_requests = []
-    row_actuelle = 1
-
+def update_sheet(membres, assignations, zones_par_phase, deploiements, wb):
     for phase in sorted(assignations.keys()):
+        nom_onglet = f"Phase {phase}"
         zones = sorted(zones_par_phase[phase])
 
-        # Titre de phase
-        toutes_lignes.append([f"=== PHASE {phase} ==="])
-        row_actuelle += 1
+        # Récupère ou crée l'onglet
+        try:
+            ws = wb.worksheet(nom_onglet)
+        except gspread.exceptions.WorksheetNotFound:
+            ws = wb.add_worksheet(title=nom_onglet, rows=100, cols=50)
+
+        # Nettoie l'onglet avant d'écrire
+        clear_sheet(ws)
 
         # Entêtes
         entetes = ["Pseudo", "PlayerId", "Total déployé", "Total assigné", ""]
         for zone in zones:
             entetes.append(f"Zone {zone} déployé")
             entetes.append(f"Zone {zone} assigné")
-        toutes_lignes.append(entetes)
-        row_actuelle += 1
+        ws.update([entetes], "A1", value_input_option="RAW")
 
         # Données
+        lignes = []
         for pid, nom in sorted(membres.items(), key=lambda x: x[1].lower()):
             total_assigne = sum(assignations[phase][pid].values())
             total_deploye = sum(deploiements[phase][pid].values())
@@ -183,10 +174,18 @@ def update_sheet(membres, assignations, zones_par_phase, deploiements):
             for zone in zones:
                 ligne.append(deploiements[phase][pid].get(zone, 0))
                 ligne.append(assignations[phase][pid].get(zone, 0))
-            toutes_lignes.append(ligne)
+            lignes.append(ligne)
 
-            # Colorier si déployé > assigné
-            if total_deploye > total_assigne:
+        ws.update(lignes, "A2", value_input_option="RAW")
+
+        # Colorier les pseudos
+        format_requests = []
+        for i, (pid, nom) in enumerate(sorted(membres.items(), key=lambda x: x[1].lower())):
+            row = i + 2
+            total_assigne = sum(assignations[phase][pid].values())
+            total_deploye = sum(deploiements[phase][pid].values())
+
+            if total_deploye < total_assigne:
                 couleur = {"red": 0.89, "green": 0.27, "blue": 0.27}
             else:
                 couleur = {"red": 1, "green": 1, "blue": 1}
@@ -195,8 +194,8 @@ def update_sheet(membres, assignations, zones_par_phase, deploiements):
                 "repeatCell": {
                     "range": {
                         "sheetId": ws.id,
-                        "startRowIndex": row_actuelle - 1,
-                        "endRowIndex": row_actuelle,
+                        "startRowIndex": row - 1,
+                        "endRowIndex": row,
                         "startColumnIndex": 0,
                         "endColumnIndex": 1
                     },
@@ -208,34 +207,27 @@ def update_sheet(membres, assignations, zones_par_phase, deploiements):
                     "fields": "userEnteredFormat.backgroundColor"
                 }
             })
-            row_actuelle += 1
 
-        # Ligne vide entre phases
-        toutes_lignes.append([])
-        row_actuelle += 1
+        if format_requests:
+            wb.batch_update({"requests": format_requests})
 
-    ws.update(toutes_lignes, "A1", value_input_option="RAW")
+        # Cache PlayerId
+        wb.batch_update({
+            "requests": [{
+                "updateDimensionProperties": {
+                    "range": {
+                        "sheetId": ws.id,
+                        "dimension": "COLUMNS",
+                        "startIndex": 1,
+                        "endIndex": 2
+                    },
+                    "properties": {"hiddenByUser": True},
+                    "fields": "hiddenByUser"
+                }
+            }]
+        })
 
-    if format_requests:
-        wb.batch_update({"requests": format_requests})
-
-    # Cache PlayerId (colonne B)
-    wb.batch_update({
-        "requests": [{
-            "updateDimensionProperties": {
-                "range": {
-                    "sheetId": ws.id,
-                    "dimension": "COLUMNS",
-                    "startIndex": 1,
-                    "endIndex": 2
-                },
-                "properties": {"hiddenByUser": True},
-                "fields": "hiddenByUser"
-            }
-        }]
-    })
-
-    print(f"Onglet '{nom_onglet}' rempli !")
+        print(f"Onglet '{nom_onglet}' rempli !")
 
 if __name__ == "__main__":
     print(f"=== TB Sheets {datetime.now().strftime('%d/%m/%Y %H:%M')} ===")
@@ -246,40 +238,38 @@ if __name__ == "__main__":
     else:
         ops = lire_jsons_drive()
 
+        client = get_gspread_client()
+        wb = client.open_by_key(SHEET_ID)
+
         if ops:
             assignations, zones_par_phase = analyser_assignations(ops, ally_to_pid)
             deploiements = analyser_deploiements(tb)
-            update_sheet(membres, assignations, zones_par_phase, deploiements)
+            update_sheet(membres, assignations, zones_par_phase, deploiements, wb)
         else:
-            print("Aucun fichier WookieeBot trouvé.")
+            print("Aucun fichier WookieeBot trouvé, mode déploiements seuls.")
             deploiements = analyser_deploiements(tb)
-            # Mode sans WookieeBot
-            client = get_gspread_client()
-            wb = client.open_by_key(SHEET_ID)
-            nom_onglet = f"TB {datetime.now().strftime('%d/%m/%y')}"
             try:
-                ws = wb.worksheet(nom_onglet)
-                print(f"Onglet '{nom_onglet}' déjà existant, skip.")
+                ws = wb.worksheet("Total déployé")
             except gspread.exceptions.WorksheetNotFound:
-                ws = wb.add_worksheet(title=nom_onglet, rows=500, cols=20)
-                phases = sorted(set(
-                    int(re.search(r'phase(\d+)', stat.get("mapStatId", "")).group(1))
-                    for stat in tb.get("finalStat", [])
-                    if "unit_donated" in stat.get("mapStatId", "") and re.search(r'phase(\d+)', stat.get("mapStatId", ""))
-                ))
-                toutes_lignes = []
+                ws = wb.add_worksheet(title="Total déployé", rows=100, cols=20)
+            ws.clear()
+            phases = sorted(set(
+                int(re.search(r'phase(\d+)', stat.get("mapStatId", "")).group(1))
+                for stat in tb.get("finalStat", [])
+                if "unit_donated" in stat.get("mapStatId", "") and re.search(r'phase(\d+)', stat.get("mapStatId", ""))
+            ))
+            entetes = ["Pseudo", "PlayerId"] + [f"Phase {p}" for p in phases] + ["Total"]
+            ws.update([entetes], "A1", value_input_option="RAW")
+            lignes = []
+            for pid, nom in sorted(membres.items(), key=lambda x: x[1].lower()):
+                ligne = [nom, pid]
+                total = 0
                 for phase in phases:
-                    toutes_lignes.append([f"=== PHASE {phase} ==="])
-                    toutes_lignes.append(["Pseudo", "PlayerId"] + [f"Phase {p}" for p in phases] + ["Total"])
-                    for pid, nom in sorted(membres.items(), key=lambda x: x[1].lower()):
-                        ligne = [nom, pid]
-                        total = 0
-                        for p in phases:
-                            n = sum(deploiements[p][pid].values())
-                            ligne.append(n)
-                            total += n
-                        ligne.append(total)
-                        toutes_lignes.append(ligne)
-                    toutes_lignes.append([])
-                ws.update(toutes_lignes, "A1", value_input_option="RAW")
-                print(f"Onglet '{nom_onglet}' rempli (sans WookieeBot) !")
+                    n = sum(deploiements[phase][pid].values())
+                    ligne.append(n)
+                    total += n
+                ligne.append(total)
+                lignes.append(ligne)
+            ws.update(lignes, "A2", value_input_option="RAW")
+            wb.batch_update({"requests": [{"updateDimensionProperties": {"range": {"sheetId": ws.id, "dimension": "COLUMNS", "startIndex": 1, "endIndex": 2}, "properties": {"hiddenByUser": True}, "fields": "hiddenByUser"}}]})
+            print("Onglet 'Total déployé' rempli !")
