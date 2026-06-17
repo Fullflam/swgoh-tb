@@ -143,7 +143,7 @@ def update_sheet(membres, assignations, zones_par_phase, deploiements):
     wb = client.open_by_key(SHEET_ID)
 
     end_time = int(tb.get("endTime", 0))
-    date_tb = datetime.fromtimestamp(end_time).strftime('%d/%m/%y') if end_time else datetime.now().strftime('%d/%m/%y')
+    date_tb = datetime.fromtimestamp(end_time / 1000).strftime('%d/%m/%y') if end_time else datetime.now().strftime('%d/%m/%y')
     nom_onglet = f"TB {date_tb}"
 
     # Vérifie si l'onglet existe déjà
