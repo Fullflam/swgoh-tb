@@ -11,7 +11,7 @@ from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseDownload
 from google.oauth2.service_account import Credentials
 
-COMLINK_URL = os.environ.get("COMLINK_URL", "https://swgoh-comlink-latest-13vg.onrender.com")
+COMLINK_URL = os.environ.get("COMLINK_URL", "")
 ALLY_CODE = os.environ.get("ALLY_CODE", "")
 GOOGLE_CREDENTIALS = os.environ.get("GOOGLE_CREDENTIALS", "")
 GH_TOKEN = os.environ.get("GH_TOKEN", "")
