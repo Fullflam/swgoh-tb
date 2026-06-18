@@ -19,6 +19,22 @@ GH_REPO_TRACKER = "Fullflam/swgoh-tracker"
 DRIVE_FOLDER_ID = "1d8uIyrLSLl4F9Ro3mXf8DrAPezDZF0A0"
 SHEET_ID = "1ascT5K_knXHzLi5qhCjX0B24-DSopFPMZ6n_jKnGiGY"
 
+def analyser_summary(tb):
+    summary = {}
+    summary_par_phase = defaultdict(dict)
+    for stat in tb.get("finalStat", []):
+        map_id = stat.get("mapStatId", "")
+        if map_id == "summary":
+            for ps in stat.get("playerStat", []):
+                summary[ps.get("memberId")] = int(ps.get("score", 0))
+        elif map_id.startswith("summary_round"):
+            phase_match = re.search(r'round_(\d+)', map_id)
+            if phase_match:
+                phase = int(phase_match.group(1))
+                for ps in stat.get("playerStat", []):
+                    summary_par_phase[phase][ps.get("memberId")] = int(ps.get("score", 0))
+    return summary, summary_par_phase
+    
 def get_gspread_client():
     creds_dict = json.loads(GOOGLE_CREDENTIALS)
     creds = Credentials.from_service_account_info(
