@@ -19,22 +19,6 @@ GH_REPO_TRACKER = "Fullflam/swgoh-tracker"
 DRIVE_FOLDER_ID = "1d8uIyrLSLl4F9Ro3mXf8DrAPezDZF0A0"
 SHEET_ID = "1ascT5K_knXHzLi5qhCjX0B24-DSopFPMZ6n_jKnGiGY"
 
-def analyser_summary(tb):
-    summary = {}
-    summary_par_phase = defaultdict(dict)
-    for stat in tb.get("finalStat", []):
-        map_id = stat.get("mapStatId", "")
-        if map_id == "summary":
-            for ps in stat.get("playerStat", []):
-                summary[ps.get("memberId")] = int(ps.get("score", 0))
-        elif map_id.startswith("summary_round"):
-            phase_match = re.search(r'round_(\d+)', map_id)
-            if phase_match:
-                phase = int(phase_match.group(1))
-                for ps in stat.get("playerStat", []):
-                    summary_par_phase[phase][ps.get("memberId")] = int(ps.get("score", 0))
-    return summary, summary_par_phase
-    
 def get_gspread_client():
     creds_dict = json.loads(GOOGLE_CREDENTIALS)
     creds = Credentials.from_service_account_info(
@@ -154,7 +138,23 @@ def analyser_deploiements(tb):
             deploiements[phase][pid][zone] += score
     return deploiements
 
-def update_sheet(membres, assignations, zones_par_phase, deploiements, tb):
+def analyser_summary(tb):
+    summary = {}
+    summary_par_phase = defaultdict(dict)
+    for stat in tb.get("finalStat", []):
+        map_id = stat.get("mapStatId", "")
+        if map_id == "summary":
+            for ps in stat.get("playerStat", []):
+                summary[ps.get("memberId")] = int(ps.get("score", 0))
+        elif map_id.startswith("summary_round"):
+            phase_match = re.search(r'round_(\d+)', map_id)
+            if phase_match:
+                phase = int(phase_match.group(1))
+                for ps in stat.get("playerStat", []):
+                    summary_par_phase[phase][ps.get("memberId")] = int(ps.get("score", 0))
+    return summary, summary_par_phase
+
+def update_sheet(membres, assignations, zones_par_phase, deploiements, tb, summary):
     client = get_gspread_client()
     wb = client.open_by_key(SHEET_ID)
 
@@ -175,7 +175,6 @@ def update_sheet(membres, assignations, zones_par_phase, deploiements, tb):
     format_requests = []
     row_actuelle = 1
 
-    # Phases avec WookieeBot
     for phase in sorted(assignations.keys()):
         zones = sorted(zones_par_phase[phase])
 
@@ -230,7 +229,7 @@ def update_sheet(membres, assignations, zones_par_phase, deploiements, tb):
     row_actuelle += 1
 
     phases_dispo = sorted(deploiements.keys())
-    entetes_recap = ["Pseudo", "PlayerId"] + [f"Phase {p}" for p in phases_dispo] + ["Total"]
+    entetes_recap = ["Pseudo", "PlayerId"] + [f"Phase {p}" for p in phases_dispo] + ["Total déployé", "Score total TB"]
     toutes_lignes.append(entetes_recap)
     row_actuelle += 1
 
@@ -242,6 +241,7 @@ def update_sheet(membres, assignations, zones_par_phase, deploiements, tb):
             ligne.append(n)
             total += n
         ligne.append(total)
+        ligne.append(summary.get(pid, 0))
         toutes_lignes.append(ligne)
         row_actuelle += 1
 
@@ -276,14 +276,14 @@ if __name__ == "__main__":
         print("Aucune TB récente trouvée.")
     else:
         ops = lire_jsons_drive()
+        deploiements = analyser_deploiements(tb)
+        summary, summary_par_phase = analyser_summary(tb)
 
         if ops:
             assignations, zones_par_phase = analyser_assignations(ops, ally_to_pid)
-            deploiements = analyser_deploiements(tb)
-            update_sheet(membres, assignations, zones_par_phase, deploiements, tb)
+            update_sheet(membres, assignations, zones_par_phase, deploiements, tb, summary)
         else:
             print("Aucun fichier WookieeBot trouvé.")
-            deploiements = analyser_deploiements(tb)
             client = get_gspread_client()
             wb = client.open_by_key(SHEET_ID)
             end_time = int(tb.get("endTime", 0))
@@ -303,7 +303,7 @@ if __name__ == "__main__":
                 toutes_lignes = []
                 for phase in phases:
                     toutes_lignes.append([f"=== PHASE {phase} ==="])
-                    toutes_lignes.append(["Pseudo", "PlayerId"] + [f"Phase {p}" for p in phases] + ["Total"])
+                    toutes_lignes.append(["Pseudo", "PlayerId"] + [f"Phase {p}" for p in phases] + ["Total déployé", "Score total TB"])
                     for pid, nom in sorted(membres.items(), key=lambda x: x[1].lower()):
                         ligne = [nom, pid]
                         total = 0
@@ -312,12 +312,12 @@ if __name__ == "__main__":
                             ligne.append(n)
                             total += n
                         ligne.append(total)
+                        ligne.append(summary.get(pid, 0))
                         toutes_lignes.append(ligne)
                     toutes_lignes.append([])
 
-                # Bloc récap mode sans WookieeBot
                 toutes_lignes.append(["=== RÉCAP ==="])
-                toutes_lignes.append(["Pseudo", "PlayerId"] + [f"Phase {p}" for p in phases] + ["Total"])
+                toutes_lignes.append(["Pseudo", "PlayerId"] + [f"Phase {p}" for p in phases] + ["Total déployé", "Score total TB"])
                 for pid, nom in sorted(membres.items(), key=lambda x: x[1].lower()):
                     ligne = [nom, pid]
                     total = 0
@@ -326,6 +326,7 @@ if __name__ == "__main__":
                         ligne.append(n)
                         total += n
                     ligne.append(total)
+                    ligne.append(summary.get(pid, 0))
                     toutes_lignes.append(ligne)
 
                 ws.update(toutes_lignes, "A1", value_input_option="RAW")
