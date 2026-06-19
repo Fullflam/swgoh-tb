@@ -3,12 +3,9 @@ import os
 import re
 import json
 import base64
-import io
 import gspread
 from collections import defaultdict
-from datetime import datetime, timedelta
-from googleapiclient.discovery import build
-from googleapiclient.http import MediaIoBaseDownload
+from datetime import datetime
 from google.oauth2.service_account import Credentials
 
 COMLINK_URL = os.environ.get("COMLINK_URL", "")
@@ -16,7 +13,8 @@ ALLY_CODE = os.environ.get("ALLY_CODE", "")
 GOOGLE_CREDENTIALS = os.environ.get("GOOGLE_CREDENTIALS", "")
 GH_TOKEN = os.environ.get("GH_TOKEN", "")
 GH_REPO_TRACKER = "Fullflam/swgoh-tracker"
-DRIVE_FOLDER_ID = "1d8uIyrLSLl4F9Ro3mXf8DrAPezDZF0A0"
+GH_REPO_TB = "Fullflam/swgoh-tb"
+GH_WOOKIE_PATH = "wookieebot"
 SHEET_ID = "1ascT5K_knXHzLi5qhCjX0B24-DSopFPMZ6n_jKnGiGY"
 
 def get_gspread_client():
@@ -26,14 +24,6 @@ def get_gspread_client():
         scopes=["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
     )
     return gspread.authorize(creds)
-
-def get_drive_service():
-    creds_dict = json.loads(GOOGLE_CREDENTIALS)
-    creds = Credentials.from_service_account_info(
-        creds_dict,
-        scopes=["https://www.googleapis.com/auth/drive.readonly"]
-    )
-    return build("drive", "v3", credentials=creds)
 
 def comlink_post(endpoint, payload):
     for tentative in range(3):
@@ -73,34 +63,32 @@ def get_guild_data():
     ally_to_pid = get_ally_to_pid()
     return membres, ally_to_pid, tb[0] if tb else None
 
-def lire_jsons_drive():
-    service = get_drive_service()
-    for i in range(14):
-        date = (datetime.now() - timedelta(days=i)).strftime("%Y-%m-%d")
-        results = service.files().list(
-            q=f"'{DRIVE_FOLDER_ID}' in parents and mimeType='application/json' and name contains '{date}'",
-            fields="files(id, name)",
-            orderBy="name"
-        ).execute()
-        fichiers = results.get("files", [])
-        if fichiers:
-            print(f"Fichiers trouvés pour {date}")
-            ops = []
-            for fichier in fichiers:
-                request = service.files().get_media(fileId=fichier["id"])
-                fh = io.BytesIO()
-                downloader = MediaIoBaseDownload(fh, request)
-                done = False
-                while not done:
-                    _, done = downloader.next_chunk()
-                fh.seek(0)
-                data = json.load(fh)
-                data["_filename"] = fichier["name"]
-                ops.append(data)
-                print(f"Lu : {fichier['name']}")
-            return ops
-    print("Aucun fichier trouvé dans les 14 derniers jours")
-    return []
+def lire_jsons_github():
+    headers = {
+        "Authorization": f"token {GH_TOKEN}",
+        "Accept": "application/vnd.github.v3+json"
+    }
+    url = f"https://api.github.com/repos/{GH_REPO_TB}/contents/{GH_WOOKIE_PATH}"
+    res = requests.get(url, headers=headers)
+    if res.status_code != 200:
+        print(f"Impossible de lire le dossier {GH_WOOKIE_PATH}")
+        return []
+
+    fichiers = [f for f in res.json() if f["name"].endswith(".json") and f["name"] != ".gitkeep"]
+    if not fichiers:
+        print("Aucun fichier WookieeBot trouvé dans le repo")
+        return []
+
+    ops = []
+    for fichier in sorted(fichiers, key=lambda x: x["name"]):
+        res_fichier = requests.get(fichier["download_url"], headers=headers)
+        if res_fichier.status_code == 200:
+            data = res_fichier.json()
+            data["_filename"] = fichier["name"]
+            ops.append(data)
+            print(f"Lu : {fichier['name']}")
+
+    return ops
 
 def analyser_assignations(ops, ally_to_pid):
     assignations = defaultdict(lambda: defaultdict(lambda: defaultdict(int)))
@@ -275,7 +263,7 @@ if __name__ == "__main__":
     if not tb:
         print("Aucune TB récente trouvée.")
     else:
-        ops = lire_jsons_drive()
+        ops = lire_jsons_github()
         deploiements = analyser_deploiements(tb)
         summary, summary_par_phase = analyser_summary(tb)
 
