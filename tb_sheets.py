@@ -213,23 +213,20 @@ def update_sheet(membres, assignations, zones_par_phase, deploiements, tb, summa
         row_actuelle += 1
 
     # Bloc récap
+   # Bloc récap
     toutes_lignes.append(["=== RÉCAP ==="])
     row_actuelle += 1
-
+    
     phases_dispo = sorted(deploiements.keys())
-    entetes_recap = ["Pseudo", "PlayerId"] + [f"Phase {p}" for p in phases_dispo] + ["Total déployé", "Score total TB"]
+    entetes_recap = ["Pseudo", "PlayerId", "Score total TB"] + [f"Score Phase {p}" for p in range(1, 7)]
     toutes_lignes.append(entetes_recap)
     row_actuelle += 1
-
+    
     for pid, nom in sorted(membres.items(), key=lambda x: x[1].lower()):
         ligne = [nom, pid]
-        total = 0
-        for phase in phases_dispo:
-            n = sum(deploiements[phase][pid].values())
-            ligne.append(n)
-            total += n
-        ligne.append(total)
         ligne.append(summary.get(pid, 0))
+        for phase in range(1, 7):
+            ligne.append(summary_par_phase.get(phase, {}).get(pid, 0))
         toutes_lignes.append(ligne)
         row_actuelle += 1
 
