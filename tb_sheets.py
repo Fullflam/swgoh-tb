@@ -87,13 +87,11 @@ def lire_jsons_github():
             data["_filename"] = fichier["name"]
             ops.append(data)
             print(f"Lu : {fichier['name']}")
-
     return ops
 
 def analyser_assignations(ops, ally_to_pid):
-    # zone_id complet (ex: tb3_mixed_phase01_conflict01_recon01) au lieu du simple numéro
     assignations = defaultdict(lambda: defaultdict(lambda: defaultdict(int)))
-    zones_par_phase = defaultdict(set)  # phase -> set de zone_id complets
+    zones_par_phase = defaultdict(set)
     for op in ops:
         filename = op.get("_filename", "")
         phase_match = re.search(r'P(\d+)', filename)
@@ -102,30 +100,30 @@ def analyser_assignations(ops, ally_to_pid):
             ally_code = str(a.get("allyCode", ""))
             pid = ally_to_pid.get(ally_code)
             zone_id = a.get("zoneId", "")
-            if pid and zone_id:
-                assignations[phase][pid][zone_id] += 1
-                zones_par_phase[phase].add(zone_id)
+            # zone_id format : tb3_mixed_phase01_conflict01_recon01
+            # on strip _recon01 pour avoir la clé commune
+            zone_key = re.sub(r'_recon\d+$', '', zone_id)
+            if pid and zone_key:
+                assignations[phase][pid][zone_key] += 1
+                zones_par_phase[phase].add(zone_key)
     return assignations, zones_par_phase
 
 def analyser_deploiements(tb):
-    # Clé = zone_id complet reconstruit depuis mapStatId
     deploiements = defaultdict(lambda: defaultdict(lambda: defaultdict(int)))
     for stat in tb.get("finalStat", []):
         map_id = stat.get("mapStatId", "")
-        if "unit_donated" not in map_id:
+        # format réel API : unit_donated_zone_tb3_mixed_phase01_conflict01
+        if not map_id.startswith("unit_donated_zone_"):
             continue
-        # mapStatId ex: tb3_mixed_phase01_conflict01_recon01_unit_donated
-        # On extrait le zone_id en retirant le suffixe _unit_donated*
-        zone_id_match = re.match(r'(tb3_mixed_phase\d+_conflict\d+(?:_bonus)?_recon\d+)', map_id)
-        phase_match = re.search(r'phase(\d+)', map_id)
-        if not zone_id_match or not phase_match:
+        zone_key_match = re.search(r'(tb3_mixed_phase(\d+)_conflict(\d+)(?:_bonus)?)', map_id)
+        if not zone_key_match:
             continue
-        zone_id = zone_id_match.group(1)
-        phase = int(phase_match.group(1))
+        zone_key = zone_key_match.group(1)
+        phase = int(zone_key_match.group(2))
         for ps in stat.get("playerStat", []):
             pid = ps.get("memberId")
             score = int(ps.get("score", 0))
-            deploiements[phase][pid][zone_id] += score
+            deploiements[phase][pid][zone_key] += score
     return deploiements
 
 def analyser_summary(tb):
@@ -166,17 +164,15 @@ def update_sheet(membres, assignations, zones_par_phase, deploiements, tb, summa
     row_actuelle = 1
 
     for phase in sorted(assignations.keys()):
-        # Trie les zone_id par numéro de conflict pour un affichage cohérent
         zones = sorted(zones_par_phase[phase], key=lambda z: re.search(r'conflict(\d+)', z).group(1) if re.search(r'conflict(\d+)', z) else z)
 
         toutes_lignes.append([f"=== PHASE {phase} ==="])
         row_actuelle += 1
 
-        # Entêtes : zone_id brut (traduit côté dashboard)
         entetes = ["Pseudo", "PlayerId", "Total déployé", "Total assigné", ""]
-        for zone_id in zones:
-            entetes.append(f"{zone_id}_deployed")
-            entetes.append(f"{zone_id}_assigned")
+        for zone_key in zones:
+            entetes.append(f"{zone_key}_deployed")
+            entetes.append(f"{zone_key}_assigned")
         toutes_lignes.append(entetes)
         row_actuelle += 1
 
@@ -184,9 +180,9 @@ def update_sheet(membres, assignations, zones_par_phase, deploiements, tb, summa
             total_assigne = sum(assignations[phase][pid].values())
             total_deploye = sum(deploiements[phase][pid].values())
             ligne = [nom, pid, total_deploye, total_assigne, ""]
-            for zone_id in zones:
-                ligne.append(deploiements[phase][pid].get(zone_id, 0))
-                ligne.append(assignations[phase][pid].get(zone_id, 0))
+            for zone_key in zones:
+                ligne.append(deploiements[phase][pid].get(zone_key, 0))
+                ligne.append(assignations[phase][pid].get(zone_key, 0))
             toutes_lignes.append(ligne)
 
             if total_deploye > total_assigne:
@@ -270,12 +266,11 @@ if __name__ == "__main__":
             assignations, zones_par_phase = analyser_assignations(ops, ally_to_pid)
             update_sheet(membres, assignations, zones_par_phase, deploiements, tb, summary, summary_par_phase)
         else:
-            print("Aucun fichier WookieeBot trouvé, écriture sans assignations.")
-            # Reconstruit zones_par_phase depuis les deploiements
+            print("Aucun fichier WookieeBot trouvé.")
             zones_par_phase = defaultdict(set)
             for phase, pid_data in deploiements.items():
                 for pid, zone_data in pid_data.items():
-                    for zone_id in zone_data.keys():
-                        zones_par_phase[phase].add(zone_id)
+                    for zone_key in zone_data.keys():
+                        zones_par_phase[phase].add(zone_key)
             assignations = defaultdict(lambda: defaultdict(lambda: defaultdict(int)))
             update_sheet(membres, assignations, zones_par_phase, deploiements, tb, summary, summary_par_phase)
