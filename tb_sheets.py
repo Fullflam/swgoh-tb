@@ -91,8 +91,9 @@ def lire_jsons_github():
     return ops
 
 def analyser_assignations(ops, ally_to_pid):
+    # zone_id complet (ex: tb3_mixed_phase01_conflict01_recon01) au lieu du simple numéro
     assignations = defaultdict(lambda: defaultdict(lambda: defaultdict(int)))
-    zones_par_phase = defaultdict(set)
+    zones_par_phase = defaultdict(set)  # phase -> set de zone_id complets
     for op in ops:
         filename = op.get("_filename", "")
         phase_match = re.search(r'P(\d+)', filename)
@@ -101,29 +102,30 @@ def analyser_assignations(ops, ally_to_pid):
             ally_code = str(a.get("allyCode", ""))
             pid = ally_to_pid.get(ally_code)
             zone_id = a.get("zoneId", "")
-            conflict_match = re.search(r'conflict(\d+)', zone_id)
-            zone = int(conflict_match.group(1)) if conflict_match else 0
-            if pid:
-                assignations[phase][pid][zone] += 1
-                zones_par_phase[phase].add(zone)
+            if pid and zone_id:
+                assignations[phase][pid][zone_id] += 1
+                zones_par_phase[phase].add(zone_id)
     return assignations, zones_par_phase
 
 def analyser_deploiements(tb):
+    # Clé = zone_id complet reconstruit depuis mapStatId
     deploiements = defaultdict(lambda: defaultdict(lambda: defaultdict(int)))
     for stat in tb.get("finalStat", []):
         map_id = stat.get("mapStatId", "")
         if "unit_donated" not in map_id:
             continue
+        # mapStatId ex: tb3_mixed_phase01_conflict01_recon01_unit_donated
+        # On extrait le zone_id en retirant le suffixe _unit_donated*
+        zone_id_match = re.match(r'(tb3_mixed_phase\d+_conflict\d+(?:_bonus)?_recon\d+)', map_id)
         phase_match = re.search(r'phase(\d+)', map_id)
-        conflict_match = re.search(r'conflict(\d+)', map_id)
-        if not phase_match or not conflict_match:
+        if not zone_id_match or not phase_match:
             continue
+        zone_id = zone_id_match.group(1)
         phase = int(phase_match.group(1))
-        zone = int(conflict_match.group(1))
         for ps in stat.get("playerStat", []):
             pid = ps.get("memberId")
             score = int(ps.get("score", 0))
-            deploiements[phase][pid][zone] += score
+            deploiements[phase][pid][zone_id] += score
     return deploiements
 
 def analyser_summary(tb):
@@ -142,7 +144,7 @@ def analyser_summary(tb):
                     summary_par_phase[phase][ps.get("memberId")] = int(ps.get("score", 0))
     return summary, summary_par_phase
 
-def update_sheet(membres, assignations, zones_par_phase, deploiements, tb, summary):
+def update_sheet(membres, assignations, zones_par_phase, deploiements, tb, summary, summary_par_phase):
     client = get_gspread_client()
     wb = client.open_by_key(SHEET_ID)
 
@@ -164,15 +166,17 @@ def update_sheet(membres, assignations, zones_par_phase, deploiements, tb, summa
     row_actuelle = 1
 
     for phase in sorted(assignations.keys()):
-        zones = sorted(zones_par_phase[phase])
+        # Trie les zone_id par numéro de conflict pour un affichage cohérent
+        zones = sorted(zones_par_phase[phase], key=lambda z: re.search(r'conflict(\d+)', z).group(1) if re.search(r'conflict(\d+)', z) else z)
 
         toutes_lignes.append([f"=== PHASE {phase} ==="])
         row_actuelle += 1
 
+        # Entêtes : zone_id brut (traduit côté dashboard)
         entetes = ["Pseudo", "PlayerId", "Total déployé", "Total assigné", ""]
-        for zone in zones:
-            entetes.append(f"Zone {zone} déployé")
-            entetes.append(f"Zone {zone} assigné")
+        for zone_id in zones:
+            entetes.append(f"{zone_id}_deployed")
+            entetes.append(f"{zone_id}_assigned")
         toutes_lignes.append(entetes)
         row_actuelle += 1
 
@@ -180,9 +184,9 @@ def update_sheet(membres, assignations, zones_par_phase, deploiements, tb, summa
             total_assigne = sum(assignations[phase][pid].values())
             total_deploye = sum(deploiements[phase][pid].values())
             ligne = [nom, pid, total_deploye, total_assigne, ""]
-            for zone in zones:
-                ligne.append(deploiements[phase][pid].get(zone, 0))
-                ligne.append(assignations[phase][pid].get(zone, 0))
+            for zone_id in zones:
+                ligne.append(deploiements[phase][pid].get(zone_id, 0))
+                ligne.append(assignations[phase][pid].get(zone_id, 0))
             toutes_lignes.append(ligne)
 
             if total_deploye > total_assigne:
@@ -213,15 +217,13 @@ def update_sheet(membres, assignations, zones_par_phase, deploiements, tb, summa
         row_actuelle += 1
 
     # Bloc récap
-   # Bloc récap
     toutes_lignes.append(["=== RÉCAP ==="])
     row_actuelle += 1
-    
-    phases_dispo = sorted(deploiements.keys())
+
     entetes_recap = ["Pseudo", "PlayerId", "Score total TB"] + [f"Score Phase {p}" for p in range(1, 7)]
     toutes_lignes.append(entetes_recap)
     row_actuelle += 1
-    
+
     for pid, nom in sorted(membres.items(), key=lambda x: x[1].lower()):
         ligne = [nom, pid]
         ligne.append(summary.get(pid, 0))
@@ -266,54 +268,14 @@ if __name__ == "__main__":
 
         if ops:
             assignations, zones_par_phase = analyser_assignations(ops, ally_to_pid)
-            update_sheet(membres, assignations, zones_par_phase, deploiements, tb, summary)
+            update_sheet(membres, assignations, zones_par_phase, deploiements, tb, summary, summary_par_phase)
         else:
-            print("Aucun fichier WookieeBot trouvé.")
-            client = get_gspread_client()
-            wb = client.open_by_key(SHEET_ID)
-            end_time = int(tb.get("endTime", 0))
-            date_tb = datetime.fromtimestamp(end_time / 1000).strftime('%d/%m/%y') if end_time else datetime.now().strftime('%d/%m/%y')
-            nom_onglet = f"TB {date_tb}"
-            total_stars = int(tb.get("totalStars", 0))
-            try:
-                ws = wb.worksheet(nom_onglet)
-                print(f"Onglet '{nom_onglet}' déjà existant, skip.")
-            except gspread.exceptions.WorksheetNotFound:
-                ws = wb.add_worksheet(title=nom_onglet, rows=500, cols=20)
-                phases = sorted(set(
-                    int(re.search(r'phase(\d+)', stat.get("mapStatId", "")).group(1))
-                    for stat in tb.get("finalStat", [])
-                    if "unit_donated" in stat.get("mapStatId", "") and re.search(r'phase(\d+)', stat.get("mapStatId", ""))
-                ))
-                toutes_lignes = []
-                for phase in phases:
-                    toutes_lignes.append([f"=== PHASE {phase} ==="])
-                    toutes_lignes.append(["Pseudo", "PlayerId"] + [f"Phase {p}" for p in phases] + ["Total déployé", "Score total TB"])
-                    for pid, nom in sorted(membres.items(), key=lambda x: x[1].lower()):
-                        ligne = [nom, pid]
-                        total = 0
-                        for p in phases:
-                            n = sum(deploiements[p][pid].values())
-                            ligne.append(n)
-                            total += n
-                        ligne.append(total)
-                        ligne.append(summary.get(pid, 0))
-                        toutes_lignes.append(ligne)
-                    toutes_lignes.append([])
-
-                toutes_lignes.append(["=== RÉCAP ==="])
-                toutes_lignes.append(["Pseudo", "PlayerId"] + [f"Phase {p}" for p in phases] + ["Total déployé", "Score total TB"])
-                for pid, nom in sorted(membres.items(), key=lambda x: x[1].lower()):
-                    ligne = [nom, pid]
-                    total = 0
-                    for p in phases:
-                        n = sum(deploiements[p][pid].values())
-                        ligne.append(n)
-                        total += n
-                    ligne.append(total)
-                    ligne.append(summary.get(pid, 0))
-                    toutes_lignes.append(ligne)
-
-                ws.update(toutes_lignes, "A1", value_input_option="RAW")
-                ws.update([[str(total_stars)]], "Z1", value_input_option="RAW")
-                print(f"Onglet '{nom_onglet}' rempli (sans WookieeBot) ! ({total_stars} étoiles)")
+            print("Aucun fichier WookieeBot trouvé, écriture sans assignations.")
+            # Reconstruit zones_par_phase depuis les deploiements
+            zones_par_phase = defaultdict(set)
+            for phase, pid_data in deploiements.items():
+                for pid, zone_data in pid_data.items():
+                    for zone_id in zone_data.keys():
+                        zones_par_phase[phase].add(zone_id)
+            assignations = defaultdict(lambda: defaultdict(lambda: defaultdict(int)))
+            update_sheet(membres, assignations, zones_par_phase, deploiements, tb, summary, summary_par_phase)
